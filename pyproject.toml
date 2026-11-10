@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sakuratips-podcasts-reader"
+version = "0.1.0"
+description = "Lector local de podcasts de SakuraTips con subtitulos, furigana y audio."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [
+    {name = "Jose Fabio", email = "J053Fabi0@users.noreply.github.com"},
+]
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "flask>=3.0",
+    "ipadic>=1.0.0",
+    "mecab-python3>=1.0.12",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+sakuratips-reader = "sakuratips_reader.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sakuratips_reader*"]
+
+[tool.setuptools.package-data]
+sakuratips_reader = [
+    "web/*.html",
+    "web/assets/css/*.css",
+    "web/assets/js/*.js",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: pruebas que requieren acceso a Internet (deshabilitadas por defecto)",
+]

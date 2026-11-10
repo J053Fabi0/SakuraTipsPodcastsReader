@@ -1,0 +1,5 @@
+beautifulsoup4>=4.12
+flask>=3.0
+ipadic>=1.0.0
+mecab-python3>=1.0.12
+requests>=2.31
