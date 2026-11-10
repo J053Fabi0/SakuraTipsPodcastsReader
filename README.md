@@ -40,6 +40,12 @@ También se puede ejecutar sin instalar el paquete:
 python -m sakuratips_reader
 ```
 
+La función de Fish (y su template de chezmoi) usa un venv fuera del repo:
+`$HOME/.venvs/sakuratips-reader`. Así el entorno no se sincroniza y, en
+Termux, no se intenta crear dentro del almacenamiento compartido. En el
+teléfono instala solo `requirements-server.txt`; en la laptop usa
+`requirements.txt` completo.
+
 ## Uso
 
 Agregar un podcast:
@@ -194,6 +200,34 @@ Cada ejecución de alta agrega un podcast nuevo a `dist/database.json`; los
 podcasts existentes nunca se eliminan. Un YouTube ID repetido se rechaza sin
 volver a descargar nada. Si las cantidades de líneas japonesas e inglesas no
 coinciden, el alta falla y no se descarga audio ni se escribe la base.
+
+## Termux y Syncthing
+
+En Android/Termux el proyecto puede vivir en una carpeta sincronizada por
+Syncthing, pero el entorno virtual **no** debe vivir ahí:
+
+- `/storage/emulated/0` es un filesystem FUSE y no permite crear el symlink
+  `lib64` que usa `python -m venv`.
+- El venv se crea en `$HOME/.venvs/sakuratips-reader`, en almacenamiento
+  privado de Termux.
+- El teléfono instala `requirements-server.txt` (servidor/lector). No incluye
+  MeCab ni `yt-dlp`, por lo que **agregar podcasts se hace en la laptop**.
+- El `.stignore` del repo evita sincronizar `.venv`, `__pycache__`,
+  `.pytest_cache` y `*.egg-info`.
+
+Después de cambiar `.stignore`, hay que asegurarse de que Syncthing lo haya
+aplicado (o reiniciar la app) antes de borrar un `.venv` antiguo en el
+teléfono. En esta configuración el venv ya no está dentro del repo, así que no
+hay nada que sincronizar.
+
+`dist/` sí se sincroniza, incluyendo `database.json`, `playlist_state.json` y
+los MP3. Ten en cuenta que `database.json` es un único archivo que ambos
+dispositivos pueden escribir:
+
+- no ejecutes el servidor en laptop y teléfono al mismo tiempo;
+- activa versionado de archivos en Syncthing;
+- si aparece un `*.sync-conflict-*`, detén ambos servidores y conserva la base
+  con los datos más recientes.
 
 ## Flujo de alta
 

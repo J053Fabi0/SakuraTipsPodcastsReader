@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import errno
 import json
+import os
+import stat
 import threading
 from pathlib import Path
 
@@ -107,6 +110,28 @@ def test_invalid_status_is_rejected(tmp_path: Path):
     store = PlaylistStateStore(tmp_path / "dist")
     with pytest.raises(PlaylistStateError):
         store.record("aaaaaaaaaaa", "inventado")
+
+
+def test_flock_unsupported_falls_back_to_thread_lock(monkeypatch, tmp_path: Path):
+    import sakuratips_reader.playlist_state as state_module
+
+    if state_module.fcntl is None:
+        pytest.skip("fcntl no disponible")
+
+    def unsupported(*args, **kwargs):
+        raise OSError(errno.ENOSYS, "Function not implemented")
+
+    monkeypatch.setattr(state_module.fcntl, "flock", unsupported)
+    store = PlaylistStateStore(tmp_path / "dist")
+    store.record("aaaaaaaaaaa", STATUS_EXISTS, title="x", attempted=False)
+    assert store.load()["videos"]["aaaaaaaaaaa"]["status"] == STATUS_EXISTS
+
+
+def test_state_is_readable_for_syncthing(tmp_path: Path):
+    store = PlaylistStateStore(tmp_path / "dist")
+    store.record("aaaaaaaaaaa", STATUS_EXISTS, title="x", attempted=False)
+    mode = stat.S_IMODE(os.stat(store.path).st_mode)
+    assert mode == 0o644
 
 
 def test_atomic_write_does_not_leave_temporary_files(tmp_path: Path):

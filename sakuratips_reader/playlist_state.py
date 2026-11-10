@@ -8,6 +8,7 @@ ya procesados.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
@@ -145,12 +146,24 @@ class PlaylistStateStore:
         self.dist_dir.mkdir(parents=True, exist_ok=True)
         with self._thread_lock:
             with open(self.lock_path, "a+", encoding="utf-8") as lock_file:
+                locked = False
                 if fcntl is not None:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                    try:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                        locked = True
+                    except OSError as exc:
+                        # Android/FUSE no implementa flock. El RLock del
+                        # proceso sigue protegiendo las escrituras.
+                        if exc.errno not in (
+                            errno.ENOSYS,
+                            errno.EOPNOTSUPP,
+                            errno.EINVAL,
+                        ):
+                            raise
                 try:
                     yield
                 finally:
-                    if fcntl is not None:
+                    if locked and fcntl is not None:
                         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _write_unlocked(self, data: dict[str, Any]) -> None:
@@ -167,6 +180,7 @@ class PlaylistStateStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self.path)
+            self._make_sync_readable()
             self._sync_directory()
         except Exception:
             try:
@@ -174,6 +188,14 @@ class PlaylistStateStore:
             except FileNotFoundError:
                 pass
             raise
+
+    def _make_sync_readable(self) -> None:
+        # Syncthing puede correr como otro UID/app Android. mkstemp crea el
+        # archivo con 0600; se normaliza para que pueda leerlo.
+        try:
+            os.chmod(self.path, 0o644)
+        except OSError:
+            pass
 
     def _sync_directory(self) -> None:
         if not hasattr(os, "O_DIRECTORY"):

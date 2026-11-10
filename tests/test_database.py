@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import errno
 import json
+import os
+import stat
 import threading
 from pathlib import Path
 
@@ -137,6 +140,28 @@ def test_corrupt_furigana_is_rejected(dist_dir: Path):
     with pytest.raises(DatabaseError):
         store.append(bad)
     assert not store.exists()
+
+
+def test_flock_unsupported_falls_back_to_thread_lock(monkeypatch, dist_dir: Path):
+    import sakuratips_reader.database as database_module
+
+    if database_module.fcntl is None:
+        pytest.skip("fcntl no disponible")
+
+    def unsupported(*args, **kwargs):
+        raise OSError(errno.ENOSYS, "Function not implemented")
+
+    monkeypatch.setattr(database_module.fcntl, "flock", unsupported)
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa"))
+    assert store.load()["podcasts"][0]["youtubeId"] == "aaaaaaaaaaa"
+
+
+def test_database_is_readable_for_syncthing(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa"))
+    mode = stat.S_IMODE(os.stat(store.path).st_mode)
+    assert mode == 0o644
 
 
 def test_atomic_write_leaves_no_temporary_files(dist_dir: Path):
