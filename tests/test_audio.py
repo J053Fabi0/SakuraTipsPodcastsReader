@@ -9,11 +9,14 @@ import pytest
 from sakuratips_reader import audio
 from sakuratips_reader.audio import (
     AudioError,
+    PlaylistEntry,
     build_podcast_record,
     classify_podcast_urls,
     download_audio,
+    extract_playlist_id,
     extract_youtube_id,
     fetch_metadata,
+    fetch_playlist_entries,
     validate_sakuratips_url,
 )
 
@@ -93,6 +96,86 @@ def test_classify_podcast_urls_rejects_two_sakuratips_urls():
         )
 
 
+PLAYLIST_URL = (
+    "https://www.youtube.com/playlist?list=PLMPxq7lpQtNc_7d2a9kjGNVzbSuIl39Xi"
+)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (PLAYLIST_URL, "PLMPxq7lpQtNc_7d2a9kjGNVzbSuIl39Xi"),
+        (
+            "https://youtube.com/playlist?list=PLMPxq7lpQtNc_7d2a9kjGNVzbSuIl39Xi&si=abc",
+            "PLMPxq7lpQtNc_7d2a9kjGNVzbSuIl39Xi",
+        ),
+    ],
+)
+def test_extract_playlist_id(url: str, expected: str):
+    assert extract_playlist_id(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://example.com/playlist?list=PL123",
+        "https://www.youtube.com/playlist?list=bad id",
+    ],
+)
+def test_extract_playlist_id_rejects_invalid(url: str):
+    with pytest.raises(AudioError):
+        extract_playlist_id(url)
+
+
+def test_fetch_playlist_entries_preserves_positions_and_skips_bad_entries():
+    calls = []
+
+    def runner(command, **kwargs):
+        calls.append(command)
+        return completed(
+            json.dumps(
+                {
+                    "_type": "playlist",
+                    "entries": [
+                        None,
+                        {
+                            "id": "dQw4w9WgXcQ",
+                            "title": "Episodio valido",
+                            "duration": 123,
+                        },
+                        {"id": "bad", "title": "ID invalido"},
+                        {"id": "aaaaaaaaaaa", "title": ""},
+                        {"id": "bbbbbbbbbbb", "title": "Sin duracion"},
+                    ],
+                }
+            )
+        )
+
+    entries = fetch_playlist_entries(PLAYLIST_URL, runner=runner)
+    assert entries == [
+        PlaylistEntry(1, None, None, None),
+        PlaylistEntry(2, "dQw4w9WgXcQ", "Episodio valido", 123.0),
+        PlaylistEntry(3, None, "ID invalido", None),
+        PlaylistEntry(4, "aaaaaaaaaaa", None, None),
+        PlaylistEntry(5, "bbbbbbbbbbb", "Sin duracion", None),
+    ]
+    assert "--flat-playlist" in calls[0]
+    assert "-J" in calls[0]
+
+
+def test_fetch_playlist_entries_rejects_non_playlist():
+    def runner(command, **kwargs):
+        return completed(
+            json.dumps(
+                {"_type": "video", "id": "dQw4w9WgXcQ", "title": "x"}
+            )
+        )
+
+    with pytest.raises(AudioError, match="no corresponde a una playlist"):
+        fetch_playlist_entries(PLAYLIST_URL, runner=runner)
+
+
 def completed(stdout: str = "", returncode: int = 0, stderr: str = ""):
     return subprocess.CompletedProcess(
         args=["cmd"], returncode=returncode, stdout=stdout, stderr=stderr
@@ -106,7 +189,12 @@ def test_fetch_metadata_parses_json():
         calls.append(command)
         return completed(
             json.dumps(
-                {"id": "dQw4w9WgXcQ", "title": "Mi podcast", "duration": 123.5}
+                {
+                    "id": "dQw4w9WgXcQ",
+                    "title": "Mi podcast",
+                    "duration": 123.5,
+                    "description": "Transcript: https://sakuratips.com/x/",
+                }
             )
         )
 
@@ -115,6 +203,7 @@ def test_fetch_metadata_parses_json():
         "id": "dQw4w9WgXcQ",
         "title": "Mi podcast",
         "duration": 123.5,
+        "description": "Transcript: https://sakuratips.com/x/",
     }
     assert "-J" in calls[0]
     assert "--no-playlist" in calls[0]

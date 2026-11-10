@@ -7,6 +7,7 @@ import math
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
@@ -23,6 +24,7 @@ YOUTUBE_HOSTS = {
 SAKURATIPS_HOSTS = {"sakuratips.com", "www.sakuratips.com"}
 
 METADATA_TIMEOUT = 300
+PLAYLIST_TIMEOUT = 300
 DOWNLOAD_TIMEOUT = 1800
 
 Runner = Callable[..., subprocess.CompletedProcess]
@@ -30,6 +32,20 @@ Runner = Callable[..., subprocess.CompletedProcess]
 
 class AudioError(Exception):
     """Fallo al obtener metadatos o descargar el audio."""
+
+
+@dataclass(frozen=True)
+class PlaylistEntry:
+    """Entrada de una playlist de YouTube.
+
+    ``youtube_id``/``title`` pueden ser ``None`` cuando yt-dlp devuelve una
+    entrada no disponible (por ejemplo, un video privado).
+    """
+
+    position: int
+    youtube_id: str | None
+    title: str | None
+    duration: float | None
 
 
 def extract_youtube_id(url: str) -> str:
@@ -75,6 +91,97 @@ def validate_sakuratips_url(url: str) -> str:
     if (parsed.hostname or "").lower() not in SAKURATIPS_HOSTS:
         raise AudioError("La URL debe pertenecer a sakuratips.com.")
     return url.strip()
+
+
+def extract_playlist_id(url: str) -> str:
+    """Valida una URL de playlist de YouTube y devuelve su ID ``list``."""
+
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        raise AudioError("La URL de la playlist debe usar http o https.")
+    host = (parsed.hostname or "").lower()
+    if host not in YOUTUBE_HOSTS:
+        raise AudioError(f"La URL no pertenece a YouTube: {url!r}")
+
+    playlist_id = parse_qs(parsed.query).get("list")
+    if not playlist_id:
+        raise AudioError("La URL de YouTube no contiene el parametro 'list'.")
+    candidate = playlist_id[0].strip()
+    if not candidate or not re.fullmatch(r"[A-Za-z0-9_-]+", candidate):
+        raise AudioError("El ID de la playlist no es valido.")
+    return candidate
+
+
+def fetch_playlist_entries(
+    playlist_url: str,
+    *,
+    runner: Runner | None = None,
+    timeout: int = PLAYLIST_TIMEOUT,
+) -> list[PlaylistEntry]:
+    """Obtiene las entradas de una playlist sin descargar los videos."""
+
+    extract_playlist_id(playlist_url)
+    yt_dlp = _tool("yt-dlp")
+    command = [
+        yt_dlp,
+        "--flat-playlist",
+        "--no-warnings",
+        "-J",
+        playlist_url,
+    ]
+    result = _run_command(command, timeout=timeout, runner=runner)
+    try:
+        metadata = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise AudioError("yt-dlp no devolvio metadatos JSON de la playlist.") from exc
+
+    if not isinstance(metadata, dict):
+        raise AudioError("Los metadatos de la playlist no son un objeto JSON.")
+    if metadata.get("_type") not in ("playlist", "multi_video"):
+        raise AudioError("La URL no corresponde a una playlist de YouTube.")
+
+    raw_entries = metadata.get("entries")
+    if raw_entries is None:
+        raw_entries = []
+    if not isinstance(raw_entries, list):
+        raise AudioError("yt-dlp devolvio una lista de entradas invalida.")
+
+    entries: list[PlaylistEntry] = []
+    for position, raw_entry in enumerate(raw_entries, start=1):
+        if not isinstance(raw_entry, dict):
+            entries.append(PlaylistEntry(position, None, None, None))
+            continue
+
+        youtube_id = raw_entry.get("id")
+        if not isinstance(youtube_id, str) or not YOUTUBE_ID_PATTERN.fullmatch(
+            youtube_id
+        ):
+            youtube_id = None
+
+        title = raw_entry.get("title")
+        if not isinstance(title, str) or not title.strip():
+            title = None
+
+        duration = raw_entry.get("duration")
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or not math.isfinite(float(duration))
+        ):
+            duration = None
+        else:
+            duration = float(duration)
+
+        entries.append(
+            PlaylistEntry(
+                position=position,
+                youtube_id=youtube_id,
+                title=title,
+                duration=duration,
+            )
+        )
+
+    return entries
 
 
 def classify_podcast_urls(first: str, second: str) -> tuple[str, str]:
@@ -191,6 +298,7 @@ def fetch_metadata(
     youtube_id = metadata.get("id")
     title = metadata.get("title")
     duration = metadata.get("duration")
+    description = metadata.get("description")
 
     if not isinstance(youtube_id, str) or not YOUTUBE_ID_PATTERN.fullmatch(
         youtube_id
@@ -210,6 +318,7 @@ def fetch_metadata(
         "id": youtube_id,
         "title": title.strip(),
         "duration": float(duration),
+        "description": description if isinstance(description, str) else "",
     }
 
 
