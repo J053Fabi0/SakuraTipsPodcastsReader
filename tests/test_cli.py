@@ -134,6 +134,55 @@ def test_successful_add_and_preserve_existing(monkeypatch, tmp_path, capsys):
     assert not any((dist / "audio").glob(".tmp-*"))
 
 
+def test_url_order_does_not_matter(monkeypatch, tmp_path, capsys):
+    dist = tmp_path / "dist"
+    monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
+
+    requested_sakuratips_urls = []
+
+    def fake_fetch(url):
+        requested_sakuratips_urls.append(url)
+        return list(JAPANESE), list(ENGLISH)
+
+    monkeypatch.setattr(cli.scraper, "fetch_subtitles", fake_fetch)
+    monkeypatch.setattr(
+        cli.audio,
+        "fetch_metadata",
+        lambda url: {
+            "id": YOUTUBE_ID,
+            "title": "Orden independiente",
+            "duration": 42.5,
+        },
+    )
+
+    def fake_download(url, youtube_id, tmp_dir):
+        path = Path(tmp_dir) / f"{youtube_id}.mp3"
+        path.write_bytes(b"fake-mp3")
+        return path
+
+    monkeypatch.setattr(cli.audio, "download_audio", fake_download)
+
+    # SakuraTips primero, YouTube después.
+    assert cli.main([SAKURA_URL, YOUTUBE_URL]) == 0
+    assert requested_sakuratips_urls == [SAKURA_URL]
+    record = DatabaseStore(dist).load()["podcasts"][0]
+    assert record["youtubeId"] == YOUTUBE_ID
+    assert record["sakuratipsUrl"] == SAKURA_URL
+    assert "Podcast agregado" in capsys.readouterr().out
+
+
+def test_two_youtube_urls_are_rejected(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SAKURATIPS_DIST", str(tmp_path / "dist"))
+    assert cli.main([YOUTUBE_URL, YOUTUBE_URL]) == 1
+    assert "SakuraTips" in capsys.readouterr().err
+
+
+def test_two_sakuratips_urls_are_rejected(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SAKURATIPS_DIST", str(tmp_path / "dist"))
+    assert cli.main([SAKURA_URL, SAKURA_URL]) == 1
+    assert "YouTube" in capsys.readouterr().err
+
+
 def test_metadata_id_mismatch_is_rejected(monkeypatch, tmp_path, capsys):
     dist = tmp_path / "dist"
     monkeypatch.setenv("SAKURATIPS_DIST", str(dist))

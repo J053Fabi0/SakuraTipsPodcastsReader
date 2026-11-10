@@ -22,6 +22,7 @@ USAGE = """Uso:
   sakuratips-reader
 
 Con dos argumentos agrega un podcast al sitio en dist/.
+El orden de las dos URLs no importa: se identifican por su dominio.
 Sin argumentos inicia el servidor local en http://127.0.0.1:8000.
 """
 
@@ -41,13 +42,15 @@ def _duplicate_exists(store: DatabaseStore, youtube_id: str) -> bool:
     )
 
 
-def add_podcast(youtube_url: str, sakuratips_url: str) -> int:
+def add_podcast(first_url: str, second_url: str) -> int:
     dist_dir = get_dist_dir()
     store = DatabaseStore(dist_dir)
 
     try:
+        youtube_url, sakuratips_url = audio.classify_podcast_urls(
+            first_url, second_url
+        )
         youtube_id = audio.extract_youtube_id(youtube_url)
-        sakuratips_url = audio.validate_sakuratips_url(sakuratips_url)
     except audio.AudioError as exc:
         _print_error(str(exc))
         return 1

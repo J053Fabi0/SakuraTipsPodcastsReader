@@ -10,6 +10,7 @@ from sakuratips_reader import audio
 from sakuratips_reader.audio import (
     AudioError,
     build_podcast_record,
+    classify_podcast_urls,
     download_audio,
     extract_youtube_id,
     fetch_metadata,
@@ -55,6 +56,41 @@ def test_validate_sakuratips_url():
         validate_sakuratips_url("https://example.com/54/")
     with pytest.raises(AudioError):
         validate_sakuratips_url("not-a-url")
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://sakuratips.com/2020/12/20/54/",
+        ),
+        (
+            "https://sakuratips.com/2020/12/20/54/",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+    ],
+)
+def test_classify_podcast_urls_ignores_order(first: str, second: str):
+    youtube_url, sakuratips_url = classify_podcast_urls(first, second)
+    assert youtube_url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert sakuratips_url == "https://sakuratips.com/2020/12/20/54/"
+
+
+def test_classify_podcast_urls_rejects_two_youtube_urls():
+    with pytest.raises(AudioError, match="SakuraTips"):
+        classify_podcast_urls(
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=BaW_jenozKc",
+        )
+
+
+def test_classify_podcast_urls_rejects_two_sakuratips_urls():
+    with pytest.raises(AudioError, match="YouTube"):
+        classify_podcast_urls(
+            "https://sakuratips.com/2020/12/20/54/",
+            "https://sakuratips.com/2020/12/19/53/",
+        )
 
 
 def completed(stdout: str = "", returncode: int = 0, stderr: str = ""):

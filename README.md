@@ -50,12 +50,17 @@ sakuratips-reader <youtube_url> <sakuratips_url>
 python -m sakuratips_reader <youtube_url> <sakuratips_url>
 ```
 
-Ejemplo de forma de las URLs:
+El orden de las dos URLs no importa: el programa identifica cada una por su
+dominio. Estos dos comandos son equivalentes:
 
 ```bash
 sakuratips-reader \
   "https://www.youtube.com/watch?v=<youtube_id>" \
   "https://sakuratips.com/2020/12/20/54/"
+
+sakuratips-reader \
+  "https://sakuratips.com/2020/12/20/54/" \
+  "https://www.youtube.com/watch?v=<youtube_id>"
 ```
 
 Iniciar el servidor local:

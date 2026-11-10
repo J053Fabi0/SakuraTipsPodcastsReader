@@ -73,10 +73,44 @@ def validate_sakuratips_url(url: str) -> str:
     if parsed.scheme not in ("http", "https"):
         raise AudioError("La URL de SakuraTips debe usar http o https.")
     if (parsed.hostname or "").lower() not in SAKURATIPS_HOSTS:
-        raise AudioError(
-            "La segunda URL debe pertenecer a sakuratips.com."
-        )
+        raise AudioError("La URL debe pertenecer a sakuratips.com.")
     return url.strip()
+
+
+def classify_podcast_urls(first: str, second: str) -> tuple[str, str]:
+    """Identifica las URLs de YouTube y SakuraTips sin importar su orden."""
+
+    youtube_url: str | None = None
+    sakuratips_url: str | None = None
+
+    for url in (first, second):
+        if youtube_url is None:
+            try:
+                extract_youtube_id(url)
+            except AudioError:
+                pass
+            else:
+                youtube_url = url.strip()
+                continue
+
+        if sakuratips_url is None:
+            try:
+                validate_sakuratips_url(url)
+            except AudioError:
+                pass
+            else:
+                sakuratips_url = url.strip()
+
+    if youtube_url is None:
+        raise AudioError(
+            "Falta una URL de YouTube valida entre los dos argumentos."
+        )
+    if sakuratips_url is None:
+        raise AudioError(
+            "Falta una URL de SakuraTips valida (sakuratips.com) entre los "
+            "dos argumentos."
+        )
+    return youtube_url, sakuratips_url
 
 
 def _tool(name: str) -> str:
