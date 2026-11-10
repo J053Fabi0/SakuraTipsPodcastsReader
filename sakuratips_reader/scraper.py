@@ -114,6 +114,9 @@ def extract_transcript_url_from_description(
         for url in urls:
             if _matches_episode_number(url, episode_number):
                 return url
+        # El titulo identifica un episodio concreto y la descripcion apunta a
+        # otro: no se debe usar esa URL. El importador buscara por numero.
+        return None
 
     # Si no hay numero en el titulo, se acepta la URL que aparezca en una
     # linea de "Transcript" (la URL puede estar en la linea siguiente).

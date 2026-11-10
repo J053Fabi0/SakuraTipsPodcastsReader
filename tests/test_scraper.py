@@ -217,6 +217,28 @@ def test_extract_direct_transcript_url_by_episode_number():
     )
 
 
+def test_mismatched_direct_transcript_url_is_rejected():
+    description = """
+■Transcript : https://sakuratips.com/2021/01/28/93/
+"""
+    assert extract_transcript_url_from_description(description, 97) is None
+
+
+def test_mismatched_description_falls_back_to_search_by_number():
+    description = """
+■Transcript : https://sakuratips.com/2021/01/28/93/
+"""
+    html = """
+    <a href="https://sakuratips.com/2021/01/28/93/">93</a>
+    <a href="https://sakuratips.com/2021/02/01/97/">97</a>
+    """
+    session = FakeSession(FakeResponse(html))
+    resolved = extract_transcript_url_from_description(description, 97)
+    if resolved is None:
+        resolved = search_sakuratips_transcript(97, session=session)
+    assert resolved == "https://sakuratips.com/2021/02/01/97/"
+
+
 def test_category_only_description_has_no_direct_url():
     description = """
 ■Podcast Transcripts :
