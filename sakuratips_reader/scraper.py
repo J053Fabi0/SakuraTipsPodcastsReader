@@ -7,12 +7,18 @@ regulares al HTML completo; solo se normaliza el texto de cada fragmento.
 from __future__ import annotations
 
 import re
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 JAPANESE_HEADING = "にほんご"
 ENGLISH_HEADING = "English"
+
+SAKURATIPS_HOSTS = {"sakuratips.com", "www.sakuratips.com"}
+URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
+NO_TRANSCRIPT_PATTERN = re.compile(r"no\s+transcripts?", re.IGNORECASE)
+EPISODE_NUMBER_PATTERN = re.compile(r"#\s*(\d+)")
 
 DEFAULT_TIMEOUT = 30
 USER_AGENT = (
@@ -43,6 +49,117 @@ def normalize_text(text: str) -> str:
     """Normaliza whitespace ASCII/NBSP preservando el espacio ideografico U+3000."""
 
     return _ASCII_WHITESPACE.sub(" ", text).strip()
+
+
+def extract_episode_number(title: str | None) -> int | None:
+    """Extrae el numero de episodio de un titulo como ``... #92``."""
+
+    if not title:
+        return None
+    match = EPISODE_NUMBER_PATTERN.search(title)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def description_says_no_transcript(description: str) -> bool:
+    return bool(NO_TRANSCRIPT_PATTERN.search(description or ""))
+
+
+def _extract_urls(text: str) -> list[str]:
+    urls: list[str] = []
+    for match in URL_PATTERN.findall(text or ""):
+        cleaned = match.rstrip(".,;:!?)]}'\"")
+        if cleaned and cleaned not in urls:
+            urls.append(cleaned)
+    return urls
+
+
+def _is_sakuratips_post(url: str) -> bool:
+    parsed = urlparse(url)
+    if (parsed.hostname or "").lower() not in SAKURATIPS_HOSTS:
+        return False
+    path = parsed.path.rstrip("/")
+    if not path or path in ("/", "/category/pod-cast"):
+        return False
+    return not any(
+        marker in path
+        for marker in ("/category/", "/tag/", "/author/", "/feed", "/wp-")
+    )
+
+
+def _matches_episode_number(url: str, episode_number: int) -> bool:
+    path = urlparse(url).path.rstrip("/")
+    return path.endswith(f"/{episode_number}")
+
+
+def extract_transcript_url_from_description(
+    description: str,
+    episode_number: int | None,
+) -> str | None:
+    """Busca una URL directa de transcripcion en la descripcion del video."""
+
+    if not description or description_says_no_transcript(description):
+        return None
+
+    urls = [
+        url
+        for url in _extract_urls(description)
+        if _is_sakuratips_post(url)
+    ]
+    if not urls:
+        return None
+
+    if episode_number is not None:
+        for url in urls:
+            if _matches_episode_number(url, episode_number):
+                return url
+
+    # Si no hay numero en el titulo, se acepta la URL que aparezca en una
+    # linea de "Transcript" (la URL puede estar en la linea siguiente).
+    lines = description.splitlines()
+    for index, line in enumerate(lines):
+        if "transcript" not in line.lower():
+            continue
+        context = "\n".join(lines[index : index + 3])
+        for url in _extract_urls(context):
+            if _is_sakuratips_post(url):
+                return url
+    return None
+
+
+def search_sakuratips_transcript(
+    episode_number: int,
+    *,
+    session: requests.Session | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """Busca en SakuraTips la entrada cuyo path termina en ``/<numero>``."""
+
+    http = session or requests.Session()
+    headers = {"User-Agent": USER_AGENT, "Accept-Language": "ja,en;q=0.8"}
+    try:
+        response = http.get(
+            "https://sakuratips.com/",
+            params={"s": str(episode_number)},
+            headers=headers,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise ScraperError(
+            f"No se pudo buscar el episodio {episode_number} en SakuraTips: {exc}"
+        ) from exc
+
+    _ensure_html_content_type(response)
+    soup = BeautifulSoup(response.content, "html.parser")
+    for anchor in soup.find_all("a", href=True):
+        url = urljoin("https://sakuratips.com/", anchor["href"])
+        if not _is_sakuratips_post(url):
+            continue
+        if _matches_episode_number(url, episode_number):
+            return url
+    return None
 
 
 def _find_article(soup: BeautifulSoup) -> Tag:

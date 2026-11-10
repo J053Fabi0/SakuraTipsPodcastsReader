@@ -8,9 +8,13 @@ import requests
 from sakuratips_reader.scraper import (
     ScraperError,
     SubtitleMismatchError,
+    description_says_no_transcript,
+    extract_episode_number,
+    extract_transcript_url_from_description,
     fetch_subtitles,
     normalize_text,
     parse_subtitles,
+    search_sakuratips_transcript,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -191,9 +195,93 @@ def test_normalize_text_keeps_ideographic_space():
     assert normalize_text("  a\t b\u00a0 c　d  ") == "a b c　d"
 
 
+def test_extract_episode_number():
+    assert extract_episode_number("Improve Japanese｜Listening Exercise  #92") == 92
+    assert extract_episode_number("Japanese Podcast #638. 宮崎県 Miyazaki") == 638
+    assert extract_episode_number("Improve Japanese # 153｜SAKURA TIPS") == 153
+    assert extract_episode_number("Sin numero") is None
+    assert extract_episode_number(None) is None
+
+
+def test_extract_direct_transcript_url_by_episode_number():
+    description = """
+■Twitter : https://twitter.com/sakura_tips_m
+■Podcast : https://anchor.fm/69612
+■Transcript : https://sakuratips.com/2021/01/27/92/
+
+#Japanese #日本語
+"""
+    assert (
+        extract_transcript_url_from_description(description, 92)
+        == "https://sakuratips.com/2021/01/27/92/"
+    )
+
+
+def test_category_only_description_has_no_direct_url():
+    description = """
+■Podcast Transcripts :
+https://sakuratips.com/category/pod-cast/
+
+■SAKURA News Letter :
+https://sakuratips.com/2021/07/07/sakuraletter/
+"""
+    assert extract_transcript_url_from_description(description, 638) is None
+
+
+def test_no_transcripts_marker_returns_none():
+    description = """
+■Podcast Transcripts : （No Transcripts for this episode)
+https://sakuratips.com/category/pod-cast/
+"""
+    assert description_says_no_transcript(description) is True
+    assert extract_transcript_url_from_description(description, 442) is None
+
+
+def test_transcript_url_on_next_line_without_episode_number():
+    description = """
+■Transcript :
+https://sakuratips.com/2021/01/27/92/
+
+#Japanese
+"""
+    assert (
+        extract_transcript_url_from_description(description, None)
+        == "https://sakuratips.com/2021/01/27/92/"
+    )
+
+
+def test_search_transcript_picks_exact_episode_suffix():
+    html = """
+    <html><body>
+      <a href="https://sakuratips.com/2021/03/01/592/">592. コロナ</a>
+      <a href="/2021/03/01/392/">392. 言葉</a>
+      <a href="https://sakuratips.com/2021/03/01/292/">292. 大雨</a>
+      <a href="https://sakuratips.com/2021/01/27/92/">92. カニ</a>
+      <a href="https://sakuratips.com/category/pod-cast/">Podcast</a>
+    </body></html>
+    """
+    session = FakeSession(FakeResponse(html))
+    url = search_sakuratips_transcript(92, session=session)
+    assert url == "https://sakuratips.com/2021/01/27/92/"
+    assert session.calls[0][1]["params"] == {"s": "92"}
+
+
+def test_search_transcript_returns_none_without_exact_match():
+    html = '<a href="https://sakuratips.com/2021/03/01/592/">592</a>'
+    session = FakeSession(FakeResponse(html))
+    assert search_sakuratips_transcript(92, session=session) is None
+
+
+def test_search_transcript_wraps_network_errors():
+    session = FakeSession(requests.ConnectionError("sin red"))
+    with pytest.raises(ScraperError, match="No se pudo buscar"):
+        search_sakuratips_transcript(92, session=session)
+
+
 class FakeResponse:
     def __init__(self, text: str, content_type: str = "text/html; charset=UTF-8"):
         self.text = text
+        self.content = text.encode("utf-8")
         self.headers = {"Content-Type": content_type}
 
     def raise_for_status(self) -> None:
