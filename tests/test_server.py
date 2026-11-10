@@ -78,6 +78,52 @@ def test_put_progress_updates_only_one(client, app_and_dist):
     assert data["podcasts"][0]["title"] == "Podcast de prueba"
 
 
+def test_put_focus_updates_only_one(client, app_and_dist):
+    _app, dist = app_and_dist
+    response = client.put("/api/focus/bbbbbbbbbbb", json={"focusIndex": 1})
+    assert response.status_code == 200
+    assert response.get_json()["focusIndex"] == 1
+
+    data = DatabaseStore(dist).load()
+    assert data["podcasts"][0]["focusIndex"] == 0
+    assert data["podcasts"][1]["focusIndex"] == 1
+    assert data["podcasts"][1]["progress"] == 20.0
+
+
+def test_post_focus_alias(client, app_and_dist):
+    _app, dist = app_and_dist
+    response = client.post(
+        "/api/focus/aaaaaaaaaaa", json={"focusIndex": 1}
+    )
+    assert response.status_code == 200
+    assert DatabaseStore(dist).load()["podcasts"][0]["focusIndex"] == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"focusIndex": -1},
+        {"focusIndex": 2},
+        {"focusIndex": True},
+        {"focusIndex": "1"},
+        {"focusIndex": None},
+        {"focusIndex": 0.5},
+    ],
+)
+def test_invalid_focus_is_rejected(client, payload):
+    response = client.put("/api/focus/aaaaaaaaaaa", json=payload)
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+
+
+def test_unknown_focus_podcast_returns_404(client):
+    response = client.put(
+        "/api/focus/zzzzzzzzzzz", json={"focusIndex": 0}
+    )
+    assert response.status_code == 404
+
+
 def test_post_progress_alias(client, app_and_dist):
     _app, dist = app_and_dist
     response = client.post(

@@ -285,6 +285,7 @@ servidor o agregar un podcast se refrescan los assets del frontend, sin tocar
         ]
       ],
       "progress": 0.0,
+      "focusIndex": 0,
       "addedAt": "2026-11-10T09:00:00-06:00"
     }
   ]
@@ -295,6 +296,9 @@ servidor o agregar un podcast se refrescan los assets del frontend, sin tocar
 - Cada token tiene `text` y `reading`; `reading` es `null` cuando no lleva
   lectura.
 - `progress` está en segundos y cumple `0 <= progress <= duration`.
+- `focusIndex` es el índice 0-based del subtítulo enfocado y cumple
+  `0 <= focusIndex < len(japanese)`. En registros antiguos que no lo tengan,
+  el navegador asume `0`.
 - `schemaVersion` permite migraciones futuras; una versión desconocida se
   rechaza en lugar de sobrescribir la base.
 
@@ -304,6 +308,8 @@ servidor o agregar un podcast se refrescan los assets del frontend, sin tocar
 - `PUT /api/progress/<youtube_id>` con `{"progress": <segundos>}`: actualiza el
   progreso de un podcast. También se acepta `POST` para el guardado con
   `navigator.sendBeacon`.
+- `PUT /api/focus/<youtube_id>` con `{"focusIndex": <entero>}`: guarda el
+  subtítulo enfocado. También acepta `POST` para `sendBeacon`.
 
 Validaciones del progreso:
 
@@ -311,9 +317,17 @@ Validaciones del progreso:
 - El valor debe ser un número finito.
 - No puede ser negativo ni superar la duración total.
 
-Escrituras concurrentes se serializan con `threading.RLock` y `fcntl.flock`;
-la lectura-modificación-escritura siempre ocurre bajo el bloqueo. El servidor
-relee `database.json` en cada petición y nunca mantiene una copia obsoleta.
+Validaciones del foco:
+
+- El YouTube ID debe existir.
+- `focusIndex` debe ser un entero no booleano.
+- Debe estar entre `0` y `len(japanese) - 1`.
+
+Escrituras concurrentes se serializan con `threading.RLock` y, cuando el
+filesystem lo permite, `fcntl.flock`; la lectura-modificación-escritura siempre
+ocurre bajo el bloqueo. En Android/FUSE, donde `flock` no está implementado, se
+usa el bloqueo del proceso. El servidor relee `database.json` en cada petición y
+nunca mantiene una copia obsoleta.
 
 ## Interfaz
 
@@ -333,6 +347,8 @@ relee `database.json` en cada petición y nunca mantiene una copia obsoleta.
 - Clic en la unidad enfocada: alterna Furigana + traducción.
 - El foco se actualiza al hacer scroll manual; no hay sincronización
   automática con el audio.
+- El subtítulo enfocado se guarda en `focusIndex` y se restaura al volver a
+  abrir el podcast.
 - Reproductor fijo inferior con barra de progreso, tiempo transcurrido,
   duración y botones `-3s`, `-1s`, Play/Pause, `+1s`, `+3s`.
 - Progreso guardado cada 5 segundos mientras reproduce, al pausar, al cambiar

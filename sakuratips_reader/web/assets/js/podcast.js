@@ -29,6 +29,9 @@ let podcast = null;
 let units = [];
 let revealed = new Set();
 let focusedIndex = -1;
+let focusRestoring = true;
+let focusSaveTimer = null;
+let lastSavedFocus = null;
 let duration = 0;
 let restoring = true;
 let lastSavedProgress = null;
@@ -163,6 +166,9 @@ function setFocused(index) {
   if (index >= 0 && units[index]) {
     units[index].classList.add("focused");
   }
+  if (!focusRestoring) {
+    scheduleFocusSave();
+  }
 }
 
 function updateFocus() {
@@ -207,6 +213,59 @@ window.addEventListener("resize", () => {
 
 function currentProgress() {
   return clamp(Number(elements.audio.currentTime) || 0, 0, duration);
+}
+
+function scheduleFocusSave() {
+  if (focusRestoring) {
+    return;
+  }
+  if (focusSaveTimer) {
+    clearTimeout(focusSaveTimer);
+  }
+  focusSaveTimer = setTimeout(() => {
+    focusSaveTimer = null;
+    saveFocus();
+  }, 400);
+}
+
+async function saveFocus({ force = false, beacon = false, value = null } = {}) {
+  if (!podcast || focusRestoring || units.length === 0) {
+    return;
+  }
+  const rawIndex = value === null ? focusedIndex : Number(value);
+  if (!Number.isInteger(rawIndex)) {
+    return;
+  }
+  const focusValue = clamp(rawIndex, 0, units.length - 1);
+  if (!force && lastSavedFocus === focusValue) {
+    return;
+  }
+
+  const url = `/api/focus/${encodeURIComponent(podcast.youtubeId)}`;
+  const payload = JSON.stringify({ focusIndex: focusValue });
+
+  if (beacon && typeof navigator.sendBeacon === "function") {
+    const blob = new Blob([payload], { type: "application/json" });
+    if (navigator.sendBeacon(url, blob)) {
+      lastSavedFocus = focusValue;
+      return;
+    }
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    lastSavedFocus = focusValue;
+  } catch (error) {
+    console.warn("No se pudo guardar el subtitulo enfocado", error);
+  }
 }
 
 async function saveProgress({ force = false, beacon = false, value = null } = {}) {
@@ -368,10 +427,12 @@ function setupPlayer() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       saveProgress({ force: true, beacon: true });
+      saveFocus({ force: true, beacon: true });
     }
   });
   window.addEventListener("pagehide", () => {
     saveProgress({ beacon: true });
+    saveFocus({ beacon: true });
   });
 
   window.setInterval(() => {
@@ -427,7 +488,26 @@ async function load() {
     renderHeader();
     renderLyrics();
     setupPlayer();
-    window.requestAnimationFrame(updateFocus);
+
+    const storedFocus = Number(podcast.focusIndex);
+    const savedFocus = clamp(
+      Number.isInteger(storedFocus) ? storedFocus : 0,
+      0,
+      Math.max(units.length - 1, 0),
+    );
+    window.requestAnimationFrame(() => {
+      if (savedFocus > 0 && units[savedFocus]) {
+        units[savedFocus].scrollIntoView({
+          block: "center",
+          behavior: "auto",
+        });
+      } else {
+        elements.lyricsViewport.scrollTop = 0;
+      }
+      setFocused(savedFocus);
+      updateFocus();
+      focusRestoring = false;
+    });
   } catch (error) {
     console.error(error);
     showFatalError(

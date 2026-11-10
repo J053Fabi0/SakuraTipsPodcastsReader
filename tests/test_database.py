@@ -96,6 +96,54 @@ def test_update_progress_rejects_invalid_values(dist_dir: Path, value):
     assert store.load()["podcasts"][0]["progress"] == 0.0
 
 
+def test_update_focus_only_target(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", focusIndex=0))
+    store.append(make_podcast("bbbbbbbbbbb", focusIndex=0))
+
+    updated = store.update_focus("bbbbbbbbbbb", 1)
+
+    assert updated["focusIndex"] == 1
+    data = store.load()
+    assert data["podcasts"][0]["focusIndex"] == 0
+    assert data["podcasts"][1]["focusIndex"] == 1
+    assert data["podcasts"][1]["progress"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "value",
+    [-1, 2, True, "1", None, 1.5],
+)
+def test_update_focus_rejects_invalid_values(dist_dir: Path, value):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", focusIndex=0))
+    with pytest.raises(ValueError):
+        store.update_focus("aaaaaaaaaaa", value)
+    assert store.load()["podcasts"][0]["focusIndex"] == 0
+
+
+def test_update_focus_unknown_id_raises_keyerror(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa"))
+    with pytest.raises(KeyError):
+        store.update_focus("zzzzzzzzzzz", 0)
+
+
+def test_focus_index_validation(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", focusIndex=1))
+    assert store.load()["podcasts"][0]["focusIndex"] == 1
+
+    missing = make_podcast("bbbbbbbbbbb")
+    missing.pop("focusIndex")
+    store.append(missing)
+
+    with pytest.raises(DatabaseError):
+        store.append(make_podcast("ccccccccccc", focusIndex=2))
+    with pytest.raises(DatabaseError):
+        store.append(make_podcast("ddddddddddd", focusIndex=True))
+
+
 def test_update_unknown_id_raises_keyerror(dist_dir: Path):
     store = DatabaseStore(dist_dir)
     store.append(make_podcast("aaaaaaaaaaa"))

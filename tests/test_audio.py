@@ -293,6 +293,7 @@ def test_build_podcast_record():
     )
     assert record["audioFile"] == "audio/dQw4w9WgXcQ.mp3"
     assert record["progress"] == 0.0
+    assert record["focusIndex"] == 0
     assert record["duration"] == 10.0
 
     with pytest.raises(ValueError):

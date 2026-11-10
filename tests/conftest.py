@@ -31,6 +31,7 @@ def make_podcast(youtube_id: str = "dQw4w9WgXcQ", **overrides):
             ],
         ],
         "progress": 0.0,
+        "focusIndex": 0,
         "addedAt": "2026-11-10T09:00:00-06:00",
     }
     podcast.update(overrides)

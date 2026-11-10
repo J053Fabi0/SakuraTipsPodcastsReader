@@ -81,6 +81,33 @@ def create_app(dist_dir: str | Path) -> Flask:
             {"youtubeId": entry["youtubeId"], "progress": entry["progress"]}
         )
 
+    @app.route("/api/focus/<youtube_id>", methods=["PUT", "POST"])
+    def api_focus(youtube_id: str):
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or "focusIndex" not in payload:
+            return _json_error(
+                "El cuerpo debe ser un objeto JSON con el campo focusIndex.",
+                400,
+            )
+
+        try:
+            entry = store.update_focus(youtube_id, payload["focusIndex"])
+        except KeyError:
+            return _json_error(
+                f"No existe el podcast con YouTube ID {youtube_id!r}.", 404
+            )
+        except ValueError as exc:
+            return _json_error(str(exc), 400)
+        except DatabaseError as exc:
+            return _json_error(str(exc), 500)
+
+        return jsonify(
+            {
+                "youtubeId": entry["youtubeId"],
+                "focusIndex": entry["focusIndex"],
+            }
+        )
+
     @app.get("/<path:filename>")
     def static_files(filename: str) -> Response:
         return send_from_directory(dist, filename)

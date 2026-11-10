@@ -401,5 +401,6 @@ def build_podcast_record(
         "english": list(english),
         "furigana": furigana,
         "progress": 0.0,
+        "focusIndex": 0,
         "addedAt": added_at,
     }

@@ -129,6 +129,16 @@ def validate_podcast(podcast: Any, index: int | None = None) -> None:
         prefix + "progress debe estar entre 0 y duration",
     )
 
+    focus_index = podcast.get("focusIndex")
+    if focus_index is not None:
+        _require(
+            isinstance(focus_index, int)
+            and not isinstance(focus_index, bool)
+            and 0 <= focus_index < len(japanese),
+            prefix
+            + "focusIndex debe ser un entero entre 0 y la cantidad de lineas",
+        )
+
 
 def validate_database(data: Any) -> dict[str, Any]:
     _require(isinstance(data, dict), "database.json debe ser un objeto")
@@ -343,5 +353,35 @@ class DatabaseStore:
                 )
 
             entry["progress"] = value
+            self._write_unlocked(data)
+            return dict(entry)
+
+    def update_focus(self, youtube_id: str, focus_index: Any) -> dict[str, Any]:
+        if (
+            not isinstance(focus_index, int)
+            or isinstance(focus_index, bool)
+        ):
+            raise ValueError("focusIndex debe ser un numero entero")
+
+        with self._locked():
+            data = self._read_unlocked()
+            entry = next(
+                (
+                    podcast
+                    for podcast in data["podcasts"]
+                    if podcast.get("youtubeId") == youtube_id
+                ),
+                None,
+            )
+            if entry is None:
+                raise KeyError(youtube_id)
+
+            line_count = len(entry["japanese"])
+            if not 0 <= focus_index < line_count:
+                raise ValueError(
+                    f"focusIndex debe estar entre 0 y {line_count - 1}"
+                )
+
+            entry["focusIndex"] = focus_index
             self._write_unlocked(data)
             return dict(entry)
