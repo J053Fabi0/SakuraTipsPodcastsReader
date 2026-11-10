@@ -63,6 +63,47 @@ sakuratips-reader \
   "https://www.youtube.com/watch?v=<youtube_id>"
 ```
 
+### Importar una playlist completa
+
+```bash
+sakuratips-reader --playlist "<playlist_url>"
+```
+
+Opciones:
+
+```bash
+sakuratips-reader --playlist "<playlist_url>" --dry-run
+sakuratips-reader --playlist "<playlist_url>" --dry-run --limit 10
+sakuratips-reader --playlist "<playlist_url>" --start 100 --limit 20
+sakuratips-reader --playlist "<playlist_url>" --delay 1.0
+```
+
+- `--dry-run`: resuelve los enlaces y muestra qué se haría, sin descargar
+  audio ni modificar `database.json`.
+- `--start N`: posición inicial 1-based dentro de la playlist.
+- `--limit N`: cantidad máxima de entradas a procesar.
+- `--delay SEGUNDOS`: pausa entre entradas (por defecto `0.5`).
+
+El importador:
+
+1. Lista la playlist con `yt-dlp --flat-playlist`.
+2. Omite videos privados/no disponibles y YouTube IDs que ya existan.
+3. Lee la descripción de cada video para obtener el enlace de transcripción.
+4. Si la descripción solo enlaza a la categoría de SakuraTips, busca la entrada
+   concreta por el número de episodio (`#N`) en el título.
+5. Ejecuta el flujo normal de alta, con todas sus validaciones.
+
+La importación es idempotente: al volver a ejecutarla, los podcasts ya
+agregados se omiten sin descargar audio de nuevo.
+
+> [!IMPORTANT]
+> La playlist **Japanese Listening** tiene 491 entradas. No todas se pueden
+> importar bajo las reglas estrictas del proyecto: hay videos privados, videos
+> sin enlace de transcripción, episodios recientes sin sección `English` y
+> páginas con cantidades de líneas distintas. Esos casos se omiten o se
+> reportan como error, sin completar ni adivinar traducciones. Usa
+> `--dry-run --limit N` para revisar antes de lanzar una importación grande.
+
 Iniciar el servidor local:
 
 ```bash
@@ -198,8 +239,9 @@ python -m pytest
 
 Las pruebas no requieren red: usan fixtures HTML recortados y `yt-dlp`
 simulado. Cubren scraper, validación de líneas, Furigana (24 casos del addon
-de Anki), base de datos atómica y concurrente, CLI, servidor/API y assets del
-sitio.
+de Anki), base de datos atómica y concurrente, CLI, servidor/API, assets del
+sitio e importación de playlists (descripciones, búsqueda por episodio,
+`--dry-run`, límites e idempotencia).
 
 Verificación manual recomendada tras un alta real:
 
