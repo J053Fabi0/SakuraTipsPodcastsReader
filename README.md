@@ -76,25 +76,72 @@ sakuratips-reader --playlist "<playlist_url>" --dry-run
 sakuratips-reader --playlist "<playlist_url>" --dry-run --limit 10
 sakuratips-reader --playlist "<playlist_url>" --start 100 --limit 20
 sakuratips-reader --playlist "<playlist_url>" --delay 1.0
+sakuratips-reader --playlist "<playlist_url>" --limit 10 --retry-failed
 ```
 
 - `--dry-run`: resuelve los enlaces y muestra qué se haría, sin descargar
-  audio ni modificar `database.json`.
+  audio ni modificar `database.json` ni el estado.
 - `--start N`: posición inicial 1-based dentro de la playlist.
 - `--limit N`: cantidad máxima de entradas a procesar.
 - `--delay SEGUNDOS`: pausa entre entradas (por defecto `0.5`).
+- `--retry-failed`: vuelve a procesar únicamente los videos cuyo estado previo
+  fue un fallo.
 
 El importador:
 
 1. Lista la playlist con `yt-dlp --flat-playlist`.
 2. Omite videos privados/no disponibles y YouTube IDs que ya existan.
-3. Lee la descripción de cada video para obtener el enlace de transcripción.
-4. Si la descripción solo enlaza a la categoría de SakuraTips, busca la entrada
+3. Consulta `dist/playlist_state.json`; si un video ya fue procesado, lo omite
+   **sin pedir metadatos, descripción, transcripción ni audio**.
+4. Lee la descripción de cada video nuevo para obtener el enlace de
+   transcripción.
+5. Si la descripción solo enlaza a la categoría de SakuraTips, busca la entrada
    concreta por el número de episodio (`#N`) en el título.
-5. Ejecuta el flujo normal de alta, con todas sus validaciones.
+6. Ejecuta el flujo normal de alta, con todas sus validaciones.
+7. Guarda el resultado de cada video en `dist/playlist_state.json`,
+   inmediatamente después de procesarlo.
 
 La importación es idempotente: al volver a ejecutarla, los podcasts ya
-agregados se omiten sin descargar audio de nuevo.
+agregados y los videos que fallaron se omiten sin repetir el trabajo caro. Para
+reintentar fallos:
+
+```bash
+sakuratips-reader --playlist "<playlist_url>" --limit 10 --retry-failed
+```
+
+### Estado de la playlist (`playlist_state.json`)
+
+`dist/playlist_state.json` es independiente de `database.json` y guarda el
+resultado por YouTube ID:
+
+```json
+{
+  "schemaVersion": 1,
+  "videos": {
+    "EJDZXEXP_Co": {
+      "youtubeId": "EJDZXEXP_Co",
+      "title": "Improve Japanese｜Listening Exercise  #93",
+      "status": "line_mismatch",
+      "transcriptUrl": "https://sakuratips.com/2021/01/28/93/",
+      "reason": "La cantidad de lineas no coincide (japones: 28, ingles: 30).",
+      "japaneseLines": 28,
+      "englishLines": 30,
+      "attempts": 1
+    }
+  },
+  "lastRun": {}
+}
+```
+
+Estados posibles: `added`, `exists`, `unavailable`, `no_transcript`,
+`no_english`, `line_mismatch` y `error`.
+
+- Se escribe de forma atómica después de cada video, así que una interrupción no
+  pierde lo ya procesado.
+- Si el archivo está corrupto o tiene una versión desconocida, se aborta sin
+  sobrescribirlo.
+- Para empezar de cero, se puede borrar `dist/playlist_state.json`.
+- `database.json` no cambia de esquema ni se mezcla con este estado.
 
 > [!IMPORTANT]
 > La playlist **Japanese Listening** tiene 491 entradas. No todas se pueden
@@ -103,6 +150,10 @@ agregados se omiten sin descargar audio de nuevo.
 > páginas con cantidades de líneas distintas. Esos casos se omiten o se
 > reportan como error, sin completar ni adivinar traducciones. Usa
 > `--dry-run --limit N` para revisar antes de lanzar una importación grande.
+
+La resolución de transcripciones rechaza URLs directas cuyo número no coincide
+con el del título. Por ejemplo, si un video titulado `#97` tiene una descripción
+que apunta al episodio `93`, se ignora esa URL y se busca el `97` en SakuraTips.
 
 Iniciar el servidor local:
 
@@ -241,6 +292,7 @@ Las pruebas no requieren red: usan fixtures HTML recortados y `yt-dlp`
 simulado. Cubren scraper, validación de líneas, Furigana (24 casos del addon
 de Anki), base de datos atómica y concurrente, CLI, servidor/API, assets del
 sitio e importación de playlists (descripciones, búsqueda por episodio,
+persistencia de estados, omisión de videos ya procesados, `--retry-failed`,
 `--dry-run`, límites e idempotencia).
 
 Verificación manual recomendada tras un alta real:
