@@ -17,6 +17,21 @@ JAPANESE = ["化粧についてです。", "みなさん、こんにちは。"]
 ENGLISH = ["About makeup.", "Hello, everyone."]
 
 
+def test_no_arguments_starts_server(monkeypatch, tmp_path):
+    from sakuratips_reader import server
+
+    dist = tmp_path / "dist"
+    monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
+    monkeypatch.setenv("SAKURATIPS_PORT", "8123")
+    calls = []
+    monkeypatch.setattr(
+        server, "serve", lambda dist_dir, port: calls.append((dist_dir, port))
+    )
+
+    assert cli.main([]) == 0
+    assert calls == [(dist.resolve(), 8123)]
+
+
 def test_help_and_wrong_argument_count(capsys):
     assert cli.main(["--help"]) == 0
     assert "Uso:" in capsys.readouterr().out

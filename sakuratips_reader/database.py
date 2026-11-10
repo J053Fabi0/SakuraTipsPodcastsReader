@@ -153,7 +153,8 @@ def validate_database(data: Any) -> dict[str, Any]:
 
 
 def _coerce_progress(value: Any) -> float:
-    _require(_is_number(value), "El progreso debe ser un numero finito")
+    if not _is_number(value):
+        raise ValueError("El progreso debe ser un numero finito")
     return float(value)
 
 
