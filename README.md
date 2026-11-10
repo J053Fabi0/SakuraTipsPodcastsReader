@@ -192,9 +192,16 @@ sakuratips-reader
 python -m sakuratips_reader
 ```
 
-El servidor escucha únicamente en `http://127.0.0.1:8000`. El puerto se puede
-cambiar con la variable de entorno `SAKURATIPS_PORT` (por ejemplo,
-`SAKURATIPS_PORT=8123 sakuratips-reader`).
+El servidor escucha únicamente en `http://127.0.0.1:8000` y abre el navegador
+automáticamente. En Termux usa `termux-open-url`; en Linux `xdg-open` (o el
+navegador por defecto). Para evitarlo:
+
+```bash
+SAKURATIPS_NO_BROWSER=1 sakuratips-reader
+```
+
+El puerto se puede cambiar con la variable de entorno `SAKURATIPS_PORT` (por
+ejemplo, `SAKURATIPS_PORT=8123 sakuratips-reader`).
 
 Cada ejecución de alta agrega un podcast nuevo a `dist/database.json`; los
 podcasts existentes nunca se eliminan. Un YouTube ID repetido se rechaza sin

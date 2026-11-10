@@ -29,7 +29,8 @@ USAGE = """Uso:
 Con dos argumentos agrega un podcast al sitio en dist/.
 El orden de las dos URLs no importa: se identifican por su dominio.
 Con --playlist recorre una playlist de YouTube y agrega sus podcasts.
-Sin argumentos inicia el servidor local en http://127.0.0.1:8000.
+Sin argumentos inicia el servidor local en http://127.0.0.1:8000 y abre el
+navegador. Usa SAKURATIPS_NO_BROWSER=1 para evitarlo.
 
 Opciones de --playlist:
   --dry-run            Muestra lo que se haria sin descargar ni escribir.

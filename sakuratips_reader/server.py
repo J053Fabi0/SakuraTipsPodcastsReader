@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import webbrowser
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
+from werkzeug.serving import make_server
 
 from .config import SERVER_HOST
 from .database import DatabaseError, DatabaseStore
@@ -115,17 +122,75 @@ def create_app(dist_dir: str | Path) -> Flask:
     return app
 
 
+def _browser_disabled() -> bool:
+    return os.environ.get("SAKURATIPS_NO_BROWSER", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def open_local_browser(url: str) -> bool:
+    """Abre la URL en el navegador local de Linux, macOS o Termux."""
+
+    if _browser_disabled():
+        return False
+
+    commands: list[list[str]] = []
+    if os.environ.get("TERMUX_VERSION") or shutil.which("termux-open-url"):
+        commands.append(["termux-open-url", url])
+    if sys.platform == "darwin":
+        commands.append(["open", url])
+    elif os.name == "nt":
+        try:
+            os.startfile(url)  # type: ignore[attr-defined]
+            return True
+        except OSError:
+            pass
+    else:
+        commands.append(["xdg-open", url])
+
+    for command in commands:
+        executable = shutil.which(command[0])
+        if executable is None:
+            continue
+        try:
+            subprocess.Popen(
+                [executable, *command[1:]],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return True
+        except OSError:
+            continue
+
+    try:
+        return bool(webbrowser.open(url, new=2))
+    except Exception:
+        return False
+
+
+def _open_browser_and_warn(url: str) -> None:
+    if not open_local_browser(url):
+        print(
+            "No se pudo abrir el navegador automaticamente. "
+            f"Abre manualmente {url}",
+            file=sys.stderr,
+        )
+
+
 def serve(dist_dir: str | Path, port: int) -> None:
     app = create_app(dist_dir)
+    http_server = make_server(SERVER_HOST, port, app, threaded=True)
+    url = f"http://{SERVER_HOST}:{port}/"
     print(
-        f"Servidor local en http://{SERVER_HOST}:{port} "
+        f"Servidor local en {url} "
         f"(sirviendo {Path(dist_dir).resolve()})",
         flush=True,
     )
-    app.run(
-        host=SERVER_HOST,
-        port=port,
-        debug=False,
-        use_reloader=False,
-        threaded=True,
-    )
+    if not _browser_disabled():
+        threading.Timer(
+            0.4, _open_browser_and_warn, args=(url,)
+        ).start()
+    http_server.serve_forever()

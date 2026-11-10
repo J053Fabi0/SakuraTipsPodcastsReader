@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from sakuratips_reader import server as server_module
 from sakuratips_reader.database import DatabaseStore
-from sakuratips_reader.server import create_app
+from sakuratips_reader.server import create_app, open_local_browser
 
 from conftest import make_podcast
 
@@ -173,6 +174,139 @@ def test_create_app_initializes_site(tmp_path):
     assert (dist / "index.html").is_file()
     assert (dist / "database.json").is_file()
     assert app.test_client().get("/").status_code == 200
+
+
+def test_open_browser_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("SAKURATIPS_NO_BROWSER", "1")
+    assert open_local_browser("http://127.0.0.1:8000/") is False
+
+
+def test_open_browser_prefers_termux_opener(monkeypatch):
+    monkeypatch.delenv("SAKURATIPS_NO_BROWSER", raising=False)
+    monkeypatch.setenv("TERMUX_VERSION", "0.118")
+    monkeypatch.setattr(
+        server_module.shutil,
+        "which",
+        lambda command: f"/bin/{command}"
+        if command == "termux-open-url"
+        else None,
+    )
+    calls = []
+    monkeypatch.setattr(
+        server_module.subprocess,
+        "Popen",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    assert open_local_browser("http://127.0.0.1:8000/") is True
+    assert calls[0][0] == [
+        "/bin/termux-open-url",
+        "http://127.0.0.1:8000/",
+    ]
+    assert calls[0][1]["start_new_session"] is True
+
+
+def test_open_browser_uses_xdg_open(monkeypatch):
+    monkeypatch.delenv("SAKURATIPS_NO_BROWSER", raising=False)
+    monkeypatch.delenv("TERMUX_VERSION", raising=False)
+    monkeypatch.setattr(server_module.sys, "platform", "linux")
+    monkeypatch.setattr(
+        server_module.shutil,
+        "which",
+        lambda command: "/usr/bin/xdg-open" if command == "xdg-open" else None,
+    )
+    calls = []
+    monkeypatch.setattr(
+        server_module.subprocess,
+        "Popen",
+        lambda command, **kwargs: calls.append(command),
+    )
+
+    assert open_local_browser("http://127.0.0.1:8000/") is True
+    assert calls == [["/usr/bin/xdg-open", "http://127.0.0.1:8000/"]]
+
+
+def test_open_browser_falls_back_to_webbrowser(monkeypatch):
+    monkeypatch.delenv("SAKURATIPS_NO_BROWSER", raising=False)
+    monkeypatch.delenv("TERMUX_VERSION", raising=False)
+    monkeypatch.setattr(server_module.shutil, "which", lambda command: None)
+    calls = []
+    monkeypatch.setattr(
+        server_module.webbrowser,
+        "open",
+        lambda url, new=0: calls.append((url, new)) or True,
+    )
+
+    assert open_local_browser("http://127.0.0.1:8000/") is True
+    assert calls == [("http://127.0.0.1:8000/", 2)]
+
+
+def test_serve_binds_before_scheduling_browser(monkeypatch, tmp_path):
+    dist = tmp_path / "dist"
+    events = []
+
+    class FakeHttpServer:
+        def serve_forever(self):
+            events.append("serve_forever")
+
+    class FakeTimer:
+        def __init__(self, delay, callback, args):
+            events.append(("timer", delay, callback, args))
+
+        def start(self):
+            events.append("timer_started")
+
+    monkeypatch.delenv("SAKURATIPS_NO_BROWSER", raising=False)
+    monkeypatch.setattr(server_module, "create_app", lambda path: object())
+    monkeypatch.setattr(
+        server_module,
+        "make_server",
+        lambda host, port, app, threaded: (
+            events.append(("make_server", host, port, threaded))
+            or FakeHttpServer()
+        ),
+    )
+    monkeypatch.setattr(server_module.threading, "Timer", FakeTimer)
+
+    server_module.serve(dist, 8123)
+
+    assert events[0] == ("make_server", "127.0.0.1", 8123, True)
+    assert events[1] == (
+        "timer",
+        0.4,
+        server_module._open_browser_and_warn,
+        ("http://127.0.0.1:8123/",),
+    )
+    assert events[2] == "timer_started"
+    assert events[3] == "serve_forever"
+
+
+def test_serve_does_not_schedule_browser_when_disabled(monkeypatch, tmp_path):
+    events = []
+
+    class FakeHttpServer:
+        def serve_forever(self):
+            events.append("serve_forever")
+
+    class FakeTimer:
+        def __init__(self, *args, **kwargs):
+            events.append("timer")
+
+        def start(self):
+            events.append("timer_started")
+
+    monkeypatch.setenv("SAKURATIPS_NO_BROWSER", "1")
+    monkeypatch.setattr(server_module, "create_app", lambda path: object())
+    monkeypatch.setattr(
+        server_module,
+        "make_server",
+        lambda host, port, app, threaded: FakeHttpServer(),
+    )
+    monkeypatch.setattr(server_module.threading, "Timer", FakeTimer)
+
+    server_module.serve(tmp_path / "dist", 8123)
+
+    assert events == ["serve_forever"]
 
 
 def test_corrupt_database_returns_500(tmp_path):
