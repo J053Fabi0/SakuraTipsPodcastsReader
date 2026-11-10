@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from sakuratips_reader.scraper import (
+    MissingEnglishError,
     ScraperError,
     SubtitleMismatchError,
     description_says_no_transcript,
@@ -145,6 +146,13 @@ def test_missing_headings_fail():
         parse_subtitles("<article><h2>にほんご</h2><p>x</p></article>")
     with pytest.raises(ScraperError):
         parse_subtitles("<article><h2>English</h2><p>x</p></article>")
+
+
+def test_missing_english_has_specific_error():
+    with pytest.raises(MissingEnglishError):
+        parse_subtitles(
+            "<article><h2>にほんご</h2><p>x</p></article>"
+        )
 
 
 def test_english_before_japanese_fails():

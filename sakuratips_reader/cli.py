@@ -12,14 +12,14 @@ from pathlib import Path
 
 import requests
 
-from . import audio, furigana, scraper, site
+from . import audio, furigana, playlist_state, scraper, site
 from .config import get_dist_dir, get_server_port
 from .database import (
     DatabaseError,
     DatabaseStore,
     DuplicatePodcastError,
 )
-from .scraper import ScraperError, SubtitleMismatchError
+from .scraper import MissingEnglishError, ScraperError, SubtitleMismatchError
 
 USAGE = """Uso:
   sakuratips-reader <youtube_url> <sakuratips_url>
@@ -36,6 +36,7 @@ Opciones de --playlist:
   --start N            Posicion inicial 1-based (por defecto 1).
   --limit N            Maximo de entradas a procesar.
   --delay SEGUNDOS     Pausa entre entradas (por defecto 0.5).
+  --retry-failed       Reintenta videos cuyo estado previo fue un fallo.
 """
 
 
@@ -59,6 +60,7 @@ def add_podcast(
     second_url: str,
     *,
     metadata: dict | None = None,
+    subtitles: tuple[list[str], list[str]] | None = None,
 ) -> int:
     dist_dir = get_dist_dir()
     store = DatabaseStore(dist_dir)
@@ -82,17 +84,26 @@ def add_podcast(
         _print_error(f"El podcast {youtube_id} ya fue agregado.")
         return 1
 
-    try:
-        japanese, english = scraper.fetch_subtitles(sakuratips_url)
-    except SubtitleMismatchError as exc:
-        _print_error(str(exc))
-        return 1
-    except ScraperError as exc:
-        _print_error(str(exc))
-        return 1
-    except Exception as exc:  # pragma: no cover - red inesperada
-        _print_error(f"No se pudieron obtener los subtitulos: {exc}")
-        return 1
+    if subtitles is not None:
+        japanese, english = subtitles
+        if len(japanese) != len(english):
+            _print_error(
+                "Los subtitulos proporcionados tienen cantidades distintas "
+                f"(japones: {len(japanese)}, ingles: {len(english)})."
+            )
+            return 1
+    else:
+        try:
+            japanese, english = scraper.fetch_subtitles(sakuratips_url)
+        except SubtitleMismatchError as exc:
+            _print_error(str(exc))
+            return 1
+        except ScraperError as exc:
+            _print_error(str(exc))
+            return 1
+        except Exception as exc:  # pragma: no cover - red inesperada
+            _print_error(f"No se pudieron obtener los subtitulos: {exc}")
+            return 1
 
     try:
         furigana_data = furigana.generate_furigana(japanese)
@@ -213,6 +224,7 @@ def import_playlist(
     limit: int | None = None,
     delay: float = 0.5,
     dry_run: bool = False,
+    retry_failed: bool = False,
 ) -> int:
     if start < 1:
         _print_error("--start debe ser un entero mayor o igual a 1.")
@@ -226,8 +238,10 @@ def import_playlist(
 
     dist_dir = get_dist_dir()
     store = DatabaseStore(dist_dir)
+    state_store = playlist_state.PlaylistStateStore(dist_dir)
 
     try:
+        playlist_id = audio.extract_playlist_id(playlist_url)
         entries = audio.fetch_playlist_entries(playlist_url)
     except audio.AudioError as exc:
         _print_error(str(exc))
@@ -239,10 +253,15 @@ def import_playlist(
 
     try:
         existing = _existing_youtube_ids(store)
+        state = state_store.load()
     except DatabaseError as exc:
         _print_error(str(exc))
         return 1
+    except playlist_state.PlaylistStateError as exc:
+        _print_error(str(exc))
+        return 1
 
+    state_videos = state["videos"]
     selected = [
         entry for entry in entries if entry.position >= start
     ]
@@ -254,38 +273,115 @@ def import_playlist(
         f"procesando {len(selected)} desde la posicion {start}."
     )
     if dry_run:
-        print("Modo dry-run: no se descargan audios ni se modifica la base.")
+        print("Modo dry-run: no se descargan audios ni se modifica el estado.")
+    elif retry_failed:
+        print("Reintentando estados fallidos (--retry-failed).")
 
     stats = {
         "added": 0,
         "would_add": 0,
-        "existing": 0,
-        "skipped": 0,
+        "exists": 0,
+        "skipped_previous": 0,
+        "unavailable": 0,
         "no_transcript": 0,
+        "no_english": 0,
+        "line_mismatch": 0,
         "errors": 0,
     }
     failures: list[str] = []
     http_session = requests.Session()
+    started_at = playlist_state.now_iso()
 
     def pause() -> None:
         if delay > 0:
             time.sleep(delay)
 
+    def save_status(youtube_id: str, status: str, **fields) -> None:
+        if dry_run:
+            return
+        entry = state_store.record(
+            youtube_id, status, playlist_id=playlist_id, **fields
+        )
+        state_videos[youtube_id] = entry
+
+    def skipped_message(entry: dict) -> str:
+        status = entry.get("status")
+        if status == playlist_state.STATUS_LINE_MISMATCH:
+            return (
+                "line_mismatch, "
+                f"{entry.get('japaneseLines')}/{entry.get('englishLines')} lineas"
+            )
+        if status == playlist_state.STATUS_NO_ENGLISH:
+            return "sin ingles"
+        if status == playlist_state.STATUS_NO_TRANSCRIPT:
+            return "sin transcripcion"
+        if status == playlist_state.STATUS_UNAVAILABLE:
+            return "video privado o no disponible"
+        if status == playlist_state.STATUS_ERROR:
+            return "error previo"
+        return str(status)
+
     try:
         for entry in selected:
             label = f"[{entry.position}/{len(entries)}]"
             youtube_id = entry.youtube_id
-            title = entry.title
+            title = entry.title or ""
 
-            if not youtube_id or not title:
-                print(f"{label} Omitido: video privado o no disponible.")
-                stats["skipped"] += 1
+            if not youtube_id:
+                print(f"{label} Omitido: entrada sin YouTube ID.")
+                stats["unavailable"] += 1
                 pause()
                 continue
 
             if youtube_id in existing:
-                print(f"{label} {title} — ya existe.")
-                stats["existing"] += 1
+                stored = state_videos.get(youtube_id)
+                if (
+                    stored is None
+                    or stored.get("status") not in playlist_state.SUCCESS_STATUSES
+                ):
+                    save_status(
+                        youtube_id,
+                        playlist_state.STATUS_EXISTS,
+                        title=title or None,
+                        position=entry.position,
+                        attempted=False,
+                    )
+                print(f"{label} {title or youtube_id} — ya existe.")
+                stats["exists"] += 1
+                pause()
+                continue
+
+            stored = state_videos.get(youtube_id)
+            if stored is not None:
+                status = stored.get("status")
+                stale_success = status in playlist_state.SUCCESS_STATUSES
+                retryable = status in playlist_state.RETRYABLE_STATUSES
+                if stale_success:
+                    # El estado decia agregado/existente, pero ya no esta en la
+                    # base: hay que volver a procesarlo.
+                    pass
+                elif retryable and retry_failed:
+                    pass
+                else:
+                    print(
+                        f"{label} {stored.get('title') or title or youtube_id} "
+                        f"— ya procesado ({skipped_message(stored)})."
+                    )
+                    stats["skipped_previous"] += 1
+                    pause()
+                    continue
+
+            if not title:
+                reason = "video privado o no disponible"
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_UNAVAILABLE,
+                    title=None,
+                    position=entry.position,
+                    reason=reason,
+                )
+                print(f"{label} Omitido: {reason}.")
+                stats["unavailable"] += 1
                 pause()
                 continue
 
@@ -293,7 +389,15 @@ def import_playlist(
             try:
                 metadata = audio.fetch_metadata(youtube_url)
             except audio.AudioError as exc:
-                print(f"{label} Error al obtener metadatos: {exc}")
+                reason = f"Error al obtener metadatos: {exc}"
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_ERROR,
+                    title=title,
+                    position=entry.position,
+                    reason=reason,
+                )
+                print(f"{label} {title} — {reason}")
                 stats["errors"] += 1
                 failures.append(f"{youtube_id} ({title}): {exc}")
                 pause()
@@ -306,7 +410,15 @@ def import_playlist(
                     title, description, session=http_session
                 )
             except ScraperError as exc:
-                print(f"{label} Error al buscar la transcripcion: {exc}")
+                reason = f"Error al buscar la transcripcion: {exc}"
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_ERROR,
+                    title=title,
+                    position=entry.position,
+                    reason=reason,
+                )
+                print(f"{label} {title} — {reason}")
                 stats["errors"] += 1
                 failures.append(f"{youtube_id} ({title}): {exc}")
                 pause()
@@ -317,6 +429,13 @@ def import_playlist(
                     "sin transcripcion en la descripcion"
                     if scraper.description_says_no_transcript(description)
                     else "sin enlace de transcripcion"
+                )
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_NO_TRANSCRIPT,
+                    title=title,
+                    position=entry.position,
+                    reason=reason,
                 )
                 print(f"{label} {title} — omitido: {reason}.")
                 stats["no_transcript"] += 1
@@ -329,18 +448,139 @@ def import_playlist(
                 pause()
                 continue
 
+            try:
+                japanese, english = scraper.fetch_subtitles(transcript_url)
+            except SubtitleMismatchError as exc:
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_LINE_MISMATCH,
+                    title=title,
+                    position=entry.position,
+                    transcript_url=transcript_url,
+                    reason=str(exc),
+                    japanese_lines=exc.japanese_count,
+                    english_lines=exc.english_count,
+                )
+                print(
+                    f"{label} {title} — discrepancia de lineas "
+                    f"({exc.japanese_count}/{exc.english_count})."
+                )
+                stats["line_mismatch"] += 1
+                pause()
+                continue
+            except MissingEnglishError as exc:
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_NO_ENGLISH,
+                    title=title,
+                    position=entry.position,
+                    transcript_url=transcript_url,
+                    reason=str(exc),
+                )
+                print(f"{label} {title} — omitido: sin ingles.")
+                stats["no_english"] += 1
+                pause()
+                continue
+            except ScraperError as exc:
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_ERROR,
+                    title=title,
+                    position=entry.position,
+                    transcript_url=transcript_url,
+                    reason=str(exc),
+                )
+                print(f"{label} {title} — error de subtitulos: {exc}")
+                stats["errors"] += 1
+                failures.append(f"{youtube_id} ({title}): {exc}")
+                pause()
+                continue
+            except Exception as exc:  # pragma: no cover - red inesperada
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_ERROR,
+                    title=title,
+                    position=entry.position,
+                    transcript_url=transcript_url,
+                    reason=str(exc),
+                )
+                print(f"{label} {title} — error inesperado: {exc}")
+                stats["errors"] += 1
+                failures.append(f"{youtube_id} ({title}): {exc}")
+                pause()
+                continue
+
             status = add_podcast(
-                youtube_url, transcript_url, metadata=metadata
+                youtube_url,
+                transcript_url,
+                metadata=metadata,
+                subtitles=(japanese, english),
             )
             if status == 0:
+                save_status(
+                    youtube_id,
+                    playlist_state.STATUS_ADDED,
+                    title=title,
+                    position=entry.position,
+                    transcript_url=transcript_url,
+                    reason=None,
+                    japanese_lines=len(japanese),
+                    english_lines=len(english),
+                )
                 stats["added"] += 1
                 existing.add(youtube_id)
             else:
-                stats["errors"] += 1
-                failures.append(f"{youtube_id} ({title}): fallo al agregar")
+                try:
+                    duplicate_now = _duplicate_exists(store, youtube_id)
+                except DatabaseError:
+                    duplicate_now = False
+                if duplicate_now:
+                    save_status(
+                        youtube_id,
+                        playlist_state.STATUS_EXISTS,
+                        title=title,
+                        position=entry.position,
+                        transcript_url=transcript_url,
+                        attempted=False,
+                    )
+                    stats["exists"] += 1
+                else:
+                    reason = "fallo al agregar (ver salida anterior)"
+                    save_status(
+                        youtube_id,
+                        playlist_state.STATUS_ERROR,
+                        title=title,
+                        position=entry.position,
+                        transcript_url=transcript_url,
+                        reason=reason,
+                    )
+                    stats["errors"] += 1
+                    failures.append(f"{youtube_id} ({title}): fallo al agregar")
             pause()
+    except playlist_state.PlaylistStateError as exc:
+        _print_error(f"No se pudo guardar el estado de la playlist: {exc}")
+        return 1
     finally:
         http_session.close()
+
+    if not dry_run:
+        try:
+            state_store.set_last_run(
+                {
+                    "playlistId": playlist_id,
+                    "playlistUrl": playlist_url,
+                    "start": start,
+                    "limit": limit,
+                    "dryRun": dry_run,
+                    "retryFailed": retry_failed,
+                    "startedAt": started_at,
+                    "finishedAt": playlist_state.now_iso(),
+                    "counts": dict(stats),
+                }
+            )
+        except playlist_state.PlaylistStateError as exc:
+            _print_error(f"No se pudo guardar lastRun: {exc}")
+            return 1
 
     print()
     print("Resumen de la playlist:")
@@ -349,14 +589,18 @@ def import_playlist(
     print(f"  Agregadas: {stats['added']}")
     if dry_run:
         print(f"  Se agregarian: {stats['would_add']}")
-    print(f"  Ya existentes: {stats['existing']}")
-    print(f"  Omitidas (privadas/no disponibles): {stats['skipped']}")
+    print(f"  Ya existentes: {stats['exists']}")
+    print(f"  Omitidas por estado previo: {stats['skipped_previous']}")
+    print(f"  Omitidas (privadas/no disponibles): {stats['unavailable']}")
     print(f"  Omitidas (sin transcripcion): {stats['no_transcript']}")
+    print(f"  Omitidas (sin ingles): {stats['no_english']}")
+    print(f"  Omitidas (discrepancia de lineas): {stats['line_mismatch']}")
     print(f"  Errores: {stats['errors']}")
     if failures:
         print("  Fallos:")
         for failure in failures:
             print(f"    - {failure}")
+    print(f"  Estado guardado en: {state_store.path}")
 
     return 1 if stats["errors"] else 0
 
@@ -372,6 +616,7 @@ def _parse_playlist_arguments(arguments: list[str]) -> argparse.Namespace | None
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--retry-failed", action="store_true")
     try:
         return parser.parse_args(arguments)
     except SystemExit:
@@ -414,6 +659,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=options.limit,
             delay=options.delay,
             dry_run=options.dry_run,
+            retry_failed=options.retry_failed,
         )
 
     if len(arguments) == 0:

@@ -45,6 +45,10 @@ class SubtitleMismatchError(ScraperError):
         )
 
 
+class MissingEnglishError(ScraperError):
+    """La pagina no contiene la seccion de subtitulos en ingles."""
+
+
 def normalize_text(text: str) -> str:
     """Normaliza whitespace ASCII/NBSP preservando el espacio ideografico U+3000."""
 
@@ -263,7 +267,7 @@ def parse_subtitles(html: str | bytes) -> tuple[list[str], list[str]]:
             f"No se encontro el encabezado <h2>{JAPANESE_HEADING}</h2>."
         )
     if not english_headings:
-        raise ScraperError(
+        raise MissingEnglishError(
             f"No se encontro el encabezado <h2>{ENGLISH_HEADING}</h2>."
         )
 
