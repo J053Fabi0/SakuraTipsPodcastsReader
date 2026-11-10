@@ -35,6 +35,52 @@ def test_page_54_has_equal_sections():
     assert english[-1] == "I’ll see you tomorrow."
 
 
+def test_page_93_footer_after_jin_sen_is_excluded():
+    html = (FIXTURES / "93.html").read_text(encoding="utf-8")
+    japanese, english = parse_subtitles(html)
+
+    assert len(japanese) == 28
+    assert len(english) == 28
+    assert japanese[-1] == "それでは、またね〜。"
+    assert english[-1] == "I’ll see you tomorrow."
+    assert "Become a Patron!" not in english
+    assert "Im glad if you support me to make podcast!" not in english
+
+
+def test_jin_sen_divider_stops_before_footer_paragraphs():
+    html = """
+    <div itemprop="articleBody">
+      <h2>にほんご</h2>
+      <p>一行目<br/>二行目</p>
+      <div class="jin-sen"></div>
+      <p>フッターの行</p>
+      <h2>English</h2>
+      <p>Line one<br/>Line two</p>
+      <div class="jin-sen"></div>
+      <p>Become a Patron!</p>
+    </div>
+    """
+    japanese, english = parse_subtitles(html)
+    assert japanese == ["一行目", "二行目"]
+    assert english == ["Line one", "Line two"]
+
+
+def test_jin_sen_before_paragraph_is_ignored():
+    html = """
+    <div itemprop="articleBody">
+      <h2>にほんご</h2>
+      <div class="jin-sen"></div>
+      <p>本文</p>
+      <h2>English</h2>
+      <div class="jin-sen"></div>
+      <p>Body</p>
+    </div>
+    """
+    japanese, english = parse_subtitles(html)
+    assert japanese == ["本文"]
+    assert english == ["Body"]
+
+
 def test_page_53_mismatch_reports_both_counts():
     html = (FIXTURES / "53.html").read_text(encoding="utf-8")
 

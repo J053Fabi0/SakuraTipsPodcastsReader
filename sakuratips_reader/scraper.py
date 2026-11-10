@@ -217,18 +217,29 @@ def _paragraph_lines(paragraph: Tag) -> list[str]:
     return [line for line in (normalize_text(raw) for raw in raw_lines) if line]
 
 
+def _is_section_divider(tag: Tag) -> bool:
+    classes = tag.get("class") or []
+    return any("jin-sen" in class_name for class_name in classes)
+
+
 def _collect_section(
     heading: Tag,
     *,
     stop_at_english: bool,
 ) -> list[str]:
     lines: list[str] = []
+    saw_paragraph = False
 
     for sibling in heading.next_siblings:
         if isinstance(sibling, NavigableString):
             continue
         if not isinstance(sibling, Tag):
             continue
+
+        if _is_section_divider(sibling) and saw_paragraph:
+            # El contenido posterior al divisor es el pie de la pagina
+            # (newsletter, Patreon, etc.), no una linea de subtitulos.
+            return lines
 
         if sibling.name == "h2":
             text = _heading_text(sibling)
@@ -243,6 +254,7 @@ def _collect_section(
             return lines
 
         if sibling.name == "p":
+            saw_paragraph = True
             lines.extend(_paragraph_lines(sibling))
 
     if stop_at_english:
