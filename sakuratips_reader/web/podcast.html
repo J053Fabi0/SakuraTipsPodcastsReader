@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Podcast · SakuraTips Reader</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="assets/js/podcast.js" defer></script>
+</head>
+<body class="podcast-page">
+  <header class="reader-header">
+    <a class="back-link" href="index.html">← Biblioteca</a>
+    <div class="reader-heading">
+      <h1 id="podcast-title">Cargando…</h1>
+      <p id="podcast-meta" class="reader-meta"></p>
+    </div>
+    <div class="reader-links">
+      <a id="youtube-link" href="#" target="_blank" rel="noreferrer">YouTube</a>
+      <a id="sakuratips-link" href="#" target="_blank" rel="noreferrer">SakuraTips</a>
+    </div>
+  </header>
+
+  <main class="lyrics-viewport" id="lyrics-viewport" aria-label="Subtítulos del podcast">
+    <div class="lyrics" id="lyrics"></div>
+    <p class="status" id="lyrics-status" role="status">Cargando subtítulos…</p>
+  </main>
+
+  <footer class="player" id="player">
+    <div class="player-progress">
+      <input id="seek" class="seek" type="range" min="0" max="1" step="0.1"
+             value="0" aria-label="Posición de reproducción" disabled>
+      <div class="time-row">
+        <span id="current-time">0:00</span>
+        <span id="total-time">0:00</span>
+      </div>
+    </div>
+    <div class="player-controls">
+      <button class="control" id="back-3" type="button" aria-label="Retroceder 3 segundos">−3 s</button>
+      <button class="control" id="back-1" type="button" aria-label="Retroceder 1 segundo">−1 s</button>
+      <button class="control play-pause" id="play-pause" type="button" aria-label="Reproducir">▶</button>
+      <button class="control" id="forward-1" type="button" aria-label="Avanzar 1 segundo">+1 s</button>
+      <button class="control" id="forward-3" type="button" aria-label="Avanzar 3 segundos">+3 s</button>
+    </div>
+    <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+  </footer>
+
+  <audio id="audio" preload="metadata"></audio>
+</body>
+</html>

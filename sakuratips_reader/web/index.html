@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>SakuraTips Podcasts Reader</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="assets/js/index.js" defer></script>
+</head>
+<body class="index-page">
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">SakuraTips</p>
+      <h1>Podcasts Reader</h1>
+    </div>
+    <a class="header-link" href="https://sakuratips.com" target="_blank" rel="noreferrer">
+      sakuratips.com
+    </a>
+  </header>
+
+  <main class="index-main">
+    <div class="tabs" role="tablist" aria-label="Filtrar podcasts">
+      <button class="tab is-active" id="tab-pending" role="tab"
+              aria-selected="true" aria-controls="panel-pending" data-tab="pending">
+        Pendientes <span class="tab-count" data-count="pending">0</span>
+      </button>
+      <button class="tab" id="tab-watched" role="tab"
+              aria-selected="false" aria-controls="panel-watched" data-tab="watched">
+        Vistos <span class="tab-count" data-count="watched">0</span>
+      </button>
+    </div>
+
+    <section class="panel" id="panel-pending" role="tabpanel" aria-labelledby="tab-pending">
+      <div class="podcast-list" id="pending-list"></div>
+    </section>
+
+    <section class="panel" id="panel-watched" role="tabpanel" aria-labelledby="tab-watched" hidden>
+      <div class="podcast-list" id="watched-list"></div>
+    </section>
+
+    <p class="status" id="index-status" role="status">Cargando podcasts…</p>
+  </main>
+</body>
+</html>
