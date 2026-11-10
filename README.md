@@ -208,28 +208,45 @@ podcasts existentes nunca se eliminan. Un YouTube ID repetido se rechaza sin
 volver a descargar nada. Si las cantidades de líneas japonesas e inglesas no
 coinciden, el alta falla y no se descarga audio ni se escribe la base.
 
-## Termux y Syncthing
+## Repo separado y Syncthing
 
-En Android/Termux el proyecto puede vivir en una carpeta sincronizada por
-Syncthing, pero el entorno virtual **no** debe vivir ahí:
+El repositorio y el resultado publicado se mantienen separados:
 
-- `/storage/emulated/0` es un filesystem FUSE y no permite crear el symlink
-  `lib64` que usa `python -m venv`.
+```text
+Laptop:
+  repo:  ~/Documents/Bots_Telegram/SakuraTipsPodcastsReader
+  dist:  ~/TemporalPermanente/Syncronizado/SakuraTipsPodcastsReader
+
+Teléfono:
+  repo:  ~/Documents/Bots_Telegram/SakuraTipsPodcastsReader
+  dist:  ~/storage/shared/Download/Permanente/Sincronizado/SakuraTipsPodcastsReader
+```
+
+Syncthing sincroniza **solo el contenido de `dist`**, no el repo. La carpeta
+sincronizada contiene `index.html`, `assets/`, `audio/`, `database.json` y
+`playlist_state.json`, pero no `.git`, código fuente ni venv.
+
+La función de Fish exporta `SAKURATIPS_DIST` con la ruta correspondiente:
+
+- laptop: la carpeta de Syncthing;
+- teléfono: la carpeta compartida de Termux.
+
+El repo de Termux se clona aparte y se actualiza con `git pull`:
+
+```fish
+git clone https://github.com/J053Fabi0/SakuraTipsPodcastsReader.git \
+  ~/Documents/Bots_Telegram/SakuraTipsPodcastsReader
+```
+
+En el teléfono:
+
 - El venv se crea en `$HOME/.venvs/sakuratips-reader`, en almacenamiento
-  privado de Termux.
-- El teléfono instala `requirements-server.txt` (servidor/lector). No incluye
-  MeCab ni `yt-dlp`, por lo que **agregar podcasts se hace en la laptop**.
-- El `.stignore` del repo evita sincronizar `.venv`, `__pycache__`,
-  `.pytest_cache` y `*.egg-info`.
+  privado de Termux, porque `/storage/emulated/0` es FUSE y no permite crear el
+  symlink `lib64`.
+- Se instala `requirements-server.txt` (servidor/lector). No incluye MeCab ni
+  `yt-dlp`, por lo que **agregar podcasts se hace en la laptop**.
 
-Después de cambiar `.stignore`, hay que asegurarse de que Syncthing lo haya
-aplicado (o reiniciar la app) antes de borrar un `.venv` antiguo en el
-teléfono. En esta configuración el venv ya no está dentro del repo, así que no
-hay nada que sincronizar.
-
-`dist/` sí se sincroniza, incluyendo `database.json`, `playlist_state.json` y
-los MP3. Ten en cuenta que `database.json` es un único archivo que ambos
-dispositivos pueden escribir:
+`database.json` es un único archivo que ambos dispositivos pueden escribir:
 
 - no ejecutes el servidor en laptop y teléfono al mismo tiempo;
 - activa versionado de archivos en Syncthing;
@@ -251,8 +268,11 @@ dispositivos pueden escribir:
 
 ## Estructura generada
 
+La ruta de `dist` se controla con `SAKURATIPS_DIST`; en la configuración de
+Syncthing es una carpeta externa al repo:
+
 ```text
-dist/
+SakuraTipsPodcastsReader/       # contenido plano de dist
 ├── index.html
 ├── podcast.html
 ├── favicon.svg
@@ -263,12 +283,14 @@ dist/
 │       └── podcast.js
 ├── audio/
 │   └── <youtube_id>.mp3
-└── database.json
+├── database.json
+└── playlist_state.json
 ```
 
-`dist/` se genera automáticamente y está ignorado por git. Al arrancar el
+`dist` se genera automáticamente y está ignorado por git. Al arrancar el
 servidor o agregar un podcast se refrescan los assets del frontend, sin tocar
-`database.json` ni los audios existentes.
+`database.json` ni los audios existentes. Si no se usa la función de Fish hay
+que exportar `SAKURATIPS_DIST` manualmente.
 
 ## `database.json`
 
