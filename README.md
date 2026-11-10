@@ -155,6 +155,29 @@ La resolución de transcripciones rechaza URLs directas cuyo número no coincide
 con el del título. Por ejemplo, si un video titulado `#97` tiene una descripción
 que apunta al episodio `93`, se ignora esa URL y se busca el `97` en SakuraTips.
 
+### División de secciones y pie promocional
+
+Las páginas de SakuraTips colocan un divisor `<div class="jin-sen">` después de
+la transcripción. Después de ese divisor aparecen párrafos que no son
+subtítulos, como `Sign up for SAKURA Letter`, `I would appreciate it if you
+could support me. Thanks!` o `Become a Patron!`. El extractor se detiene en ese
+divisor, por lo que ya no cuenta esas líneas como parte de la traducción.
+
+En la revisión de los primeros 50 episodios, de los **44 guardados como
+`line_mismatch`, 31 pasan a tener líneas iguales** con esta corrección. Los 13
+restantes siguen teniendo diferencias reales de segmentación: por ejemplo, una
+frase inglesa combina dos líneas japonesas. No se fusionan ni se inventan líneas
+para forzarlos. Además, una página que antes fallaba por timeout de red volvió a
+responder correctamente.
+
+Si ya habías procesado la playlist antes de esta corrección, los fallos están
+guardados en `dist/playlist_state.json` y se omiten por defecto. Para
+reevaluarlos una vez:
+
+```bash
+sakuratips-reader --playlist "<playlist_url>" --limit 50 --retry-failed
+```
+
 Iniciar el servidor local:
 
 ```bash
