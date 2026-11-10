@@ -49,6 +49,11 @@ function formatTime(seconds) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
 function setSaveStatus(message) {
   elements.saveStatus.textContent = message;
   if (saveStatusTimer) {
@@ -366,7 +371,7 @@ function setupPlayer() {
     }
   });
   window.addEventListener("pagehide", () => {
-    saveProgress({ force: true, beacon: true });
+    saveProgress({ beacon: true });
   });
 
   window.setInterval(() => {
@@ -383,9 +388,9 @@ function renderHeader() {
   elements.title.textContent = podcast.title;
   const lines = podcast.japanese.length;
   const percent = duration > 0
-    ? Math.round(clamp((Number(podcast.progress) / duration) * 100, 0, 100))
+    ? clamp((Number(podcast.progress) / duration) * 100, 0, 100)
     : 0;
-  elements.meta.textContent = `${formatTime(duration)} · ${lines} líneas · ${percent}%`;
+  elements.meta.textContent = `${formatTime(duration)} · ${lines} líneas · ${formatPercent(percent)}`;
   elements.youtubeLink.href = podcast.youtubeUrl;
   elements.sakuratipsLink.href = podcast.sakuratipsUrl;
 }

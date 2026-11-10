@@ -133,7 +133,9 @@ def validate_database(data: Any) -> dict[str, Any]:
     _require(isinstance(data, dict), "database.json debe ser un objeto")
     version = data.get("schemaVersion")
     _require(
-        isinstance(version, int) and version == SCHEMA_VERSION,
+        isinstance(version, int)
+        and not isinstance(version, bool)
+        and version == SCHEMA_VERSION,
         f"schemaVersion no soportada: {version!r} (se esperaba {SCHEMA_VERSION})",
     )
     podcasts = data.get("podcasts")
@@ -228,7 +230,11 @@ class DatabaseStore:
         except OSError:
             return
         try:
-            os.fsync(dir_fd)
+            try:
+                os.fsync(dir_fd)
+            except OSError:
+                # El rename ya es atomico; la sincronizacion es best-effort.
+                pass
         finally:
             os.close(dir_fd)
 

@@ -156,6 +156,22 @@ def test_english_before_japanese_fails():
         parse_subtitles(html)
 
 
+def test_english_section_stops_at_next_heading():
+    html = """
+    <div itemprop="articleBody">
+      <h2>にほんご</h2>
+      <p>一</p>
+      <h2>English</h2>
+      <p>One</p>
+      <h2>Otra seccion</h2>
+      <p>No debe incluirse</p>
+    </div>
+    """
+    japanese, english = parse_subtitles(html)
+    assert japanese == ["一"]
+    assert english == ["One"]
+
+
 def test_unexpected_heading_inside_japanese_fails():
     html = """
     <div itemprop="articleBody">

@@ -32,6 +32,7 @@ include = ["sakuratips_reader*"]
 [tool.setuptools.package-data]
 sakuratips_reader = [
     "web/*.html",
+    "web/*.svg",
     "web/assets/css/*.css",
     "web/assets/js/*.js",
 ]

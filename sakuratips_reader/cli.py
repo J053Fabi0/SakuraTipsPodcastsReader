@@ -52,7 +52,13 @@ def add_podcast(youtube_url: str, sakuratips_url: str) -> int:
         _print_error(str(exc))
         return 1
 
-    if _duplicate_exists(store, youtube_id):
+    try:
+        duplicate = _duplicate_exists(store, youtube_id)
+    except DatabaseError as exc:
+        _print_error(str(exc))
+        return 1
+
+    if duplicate:
         _print_error(f"El podcast {youtube_id} ya fue agregado.")
         return 1
 

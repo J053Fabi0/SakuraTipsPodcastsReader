@@ -38,6 +38,11 @@ function progressPercent(podcast) {
   return clamp((progress / duration) * 100, 0, 100);
 }
 
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
 function createCard(podcast) {
   const percent = progressPercent(podcast);
   const link = document.createElement("a");
@@ -53,7 +58,7 @@ function createCard(podcast) {
 
   const percentLabel = document.createElement("span");
   percentLabel.className = "card-percent";
-  percentLabel.textContent = `${Math.round(percent)}%`;
+  percentLabel.textContent = formatPercent(percent);
 
   top.append(title, percentLabel);
 

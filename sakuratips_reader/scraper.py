@@ -34,7 +34,7 @@ class SubtitleMismatchError(ScraperError):
         self.japanese_count = japanese_count
         self.english_count = english_count
         super().__init__(
-            "Error: la cantidad de lineas no coincide "
+            "La cantidad de lineas no coincide "
             f"(japones: {japanese_count}, ingles: {english_count})."
         )
 
@@ -108,12 +108,15 @@ def _collect_section(
 
         if sibling.name == "h2":
             text = _heading_text(sibling)
-            if stop_at_english and text == ENGLISH_HEADING:
-                return lines
-            raise ScraperError(
-                "Se encontro un encabezado <h2> inesperado dentro de los "
-                f"subtitulos: {text!r}."
-            )
+            if stop_at_english:
+                if text == ENGLISH_HEADING:
+                    return lines
+                raise ScraperError(
+                    "Se encontro un encabezado <h2> inesperado dentro de los "
+                    f"subtitulos: {text!r}."
+                )
+            # La seccion inglesa termina en el siguiente encabezado.
+            return lines
 
         if sibling.name == "p":
             lines.extend(_paragraph_lines(sibling))
@@ -126,7 +129,7 @@ def _collect_section(
     return lines
 
 
-def parse_subtitles(html: str) -> tuple[list[str], list[str]]:
+def parse_subtitles(html: str | bytes) -> tuple[list[str], list[str]]:
     """Extrae y valida las lineas japonesas e inglesas de un HTML."""
 
     soup = BeautifulSoup(html, "html.parser")
@@ -190,7 +193,10 @@ def fetch_subtitles(
         ) from exc
 
     _ensure_html_content_type(response)
-    return parse_subtitles(response.text)
+    raw_html = getattr(response, "content", None)
+    if raw_html is None:
+        raw_html = response.text
+    return parse_subtitles(raw_html)
 
 
 def lines_from_html_fragment(html: str) -> tuple[list[str], list[str]]:
