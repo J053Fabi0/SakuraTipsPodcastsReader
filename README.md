@@ -1,16 +1,18 @@
 # SakuraTips Podcasts Reader
 
 Lector local de los podcasts de [SakuraTips](https://sakuratips.com). Descarga
-el audio desde YouTube, extrae los subtítulos japonés/inglés de la página del
-podcast, genera el Furigana con MeCab y publica un sitio estático en `dist/`
-con una interfaz de lectura tipo Spotify Lyrics.
+el audio desde YouTube, extrae título, número de capítulo y subtítulos
+japonés/inglés de la página del podcast, genera el Furigana con MeCab y publica
+un sitio estático en `dist/` con una interfaz de lectura tipo Spotify Lyrics.
 
 - Audio local en MP3 (`dist/audio/<youtube_id>.mp3`), nunca se reproduce desde
   YouTube.
 - Subtítulos intercalados japonés/inglés, traducción con blur y Furigana oculto
   por defecto.
 - Foco de lectura por cercanía al centro; el scroll lo controla el usuario.
-- Progreso persistido en `dist/database.json` mediante una API local.
+- Progreso, foco y dificultad persistidos en `dist/database.json` mediante una
+  API local.
+- Tema claro/oscuro automático según el dispositivo.
 - Servidor exclusivamente en `127.0.0.1`.
 
 ## Requisitos
@@ -67,6 +69,21 @@ sakuratips-reader \
 sakuratips-reader \
   "https://sakuratips.com/2020/12/20/54/" \
   "https://www.youtube.com/watch?v=<youtube_id>"
+```
+
+### Migrar títulos desde SakuraTips
+
+Actualiza `title` y `chapterNumber` de todos los podcasts usando el `<h1>` de
+la página de transcripción:
+
+```bash
+sakuratips-reader --migrate-titles
+```
+
+Para revisar los cambios sin escribir:
+
+```bash
+sakuratips-reader --migrate-titles --dry-run
 ```
 
 ### Importar una playlist completa
@@ -256,13 +273,15 @@ En el teléfono:
 ## Flujo de alta
 
 1. Se extrae el YouTube ID de la URL y se comprueba que no exista.
-2. Se descarga el HTML de SakuraTips y se extraen las líneas japonesas e
-   inglesas dividiendo por `<br>` y por párrafos.
+2. Se descarga el HTML de SakuraTips y se extraen el `<h1>` del artículo, el
+   número de capítulo y las líneas japonesas e inglesas dividiendo por `<br>`
+   y por párrafos.
 3. Se valida que ambas secciones tengan exactamente la misma cantidad de
    líneas. Si no coinciden, se aborta sin descargar audio ni tocar la base.
 4. Se genera el Furigana línea por línea con MeCab/IPADIC.
-5. Se obtienen título y duración con `yt-dlp` y se descarga el audio en MP3 a
-   `dist/audio/<youtube_id>.mp3`.
+5. Se obtienen la duración y los datos de YouTube con `yt-dlp`, y se descarga
+   el audio en MP3 a `dist/audio/<youtube_id>.mp3`. El título visible es el de
+   SakuraTips, no el del video.
 6. Se agrega el registro a `dist/database.json` con escritura atómica
    (archivo temporal + `os.replace`) y bloqueo entre procesos.
 
@@ -315,6 +334,8 @@ que exportar `SAKURATIPS_DIST` manualmente.
       ],
       "progress": 0.0,
       "focusIndex": 0,
+      "chapterNumber": 54,
+      "difficulty": 0,
       "addedAt": "2026-11-10T09:00:00-06:00"
     }
   ]
@@ -328,6 +349,8 @@ que exportar `SAKURATIPS_DIST` manualmente.
 - `focusIndex` es el índice 0-based del subtítulo enfocado y cumple
   `0 <= focusIndex < len(japanese)`. En registros antiguos que no lo tengan,
   el navegador asume `0`.
+- `chapterNumber` se extrae del título de SakuraTips; puede ser `null`.
+- `difficulty` es un entero `0..5`; `0` significa sin calificar.
 - `schemaVersion` permite migraciones futuras; una versión desconocida se
   rechaza en lugar de sobrescribir la base.
 
@@ -339,6 +362,8 @@ que exportar `SAKURATIPS_DIST` manualmente.
   `navigator.sendBeacon`.
 - `PUT /api/focus/<youtube_id>` con `{"focusIndex": <entero>}`: guarda el
   subtítulo enfocado. También acepta `POST` para `sendBeacon`.
+- `PUT /api/difficulty/<youtube_id>` con `{"difficulty": <0..5>}`: guarda la
+  dificultad. También acepta `POST`.
 
 Validaciones del progreso:
 
@@ -351,6 +376,7 @@ Validaciones del foco:
 - El YouTube ID debe existir.
 - `focusIndex` debe ser un entero no booleano.
 - Debe estar entre `0` y `len(japanese) - 1`.
+- `difficulty` debe ser un entero no booleano entre `0` y `5`.
 
 Escrituras concurrentes se serializan con `threading.RLock` y, cuando el
 filesystem lo permite, `fcntl.flock`; la lectura-modificación-escritura siempre
@@ -363,8 +389,12 @@ nunca mantiene una copia obsoleta.
 ### Biblioteca
 
 - Pestañas **Pendientes** (`<95%`) y **Vistos** (`>=95%`).
-- Cada tarjeta muestra título, porcentaje y duración.
+- Cada tarjeta muestra título, porcentaje, duración y dificultad.
 - El progreso se calcula como `progress / duration * 100`.
+- Ordenación por **Capítulo** o **Dificultad**, en orden ascendente o
+  descendente. Los podcasts sin número van al final; los no calificados
+  también van al final al ordenar por dificultad.
+- El tema claro/oscuro sigue `prefers-color-scheme` en tiempo real.
 
 ### Lector
 
@@ -380,10 +410,18 @@ nunca mantiene una copia obsoleta.
   automática con el audio.
 - El subtítulo enfocado se guarda en `focusIndex` y se restaura al volver a
   abrir el podcast.
-- Reproductor fijo inferior con barra de progreso, tiempo transcurrido,
-  duración y botones `-3s`, `-1s`, Play/Pause, `+1s`, `+3s`.
+- Reproductor fijo inferior con:
+  - fila superior de **frase anterior**, **mostrar/ocultar detalles** y
+    **frase siguiente**;
+  - barra de progreso y tiempos;
+  - botones grandes `-5s`, `-3s`, Play/Pause, `+3s`, `+5s`.
+- Al terminar el podcast aparece, como última unidad de la lista, una tarjeta
+  con calificación de dificultad (1–5 estrellas) y enlace al siguiente
+  podcast por número de capítulo.
 - Progreso guardado cada 5 segundos mientras reproduce, al pausar, al cambiar
   de posición, al terminar, al ocultar la pestaña y al abandonar la página.
+- El tema oscuro se activa automáticamente si el dispositivo lo prefiere; no
+  requiere JavaScript.
 - No se usa `localStorage` ni `IndexedDB`.
 
 ## Pruebas
