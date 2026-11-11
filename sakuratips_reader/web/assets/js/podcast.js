@@ -32,7 +32,7 @@ let podcast = null;
 let allPodcasts = [];
 let units = [];
 let endCard = null;
-let endCardShown = false;
+let endCardShown = true;
 let revealed = new Set();
 let focusedIndex = -1;
 let focusRestoring = true;
@@ -164,7 +164,7 @@ function buildEndCard() {
   const card = document.createElement("section");
   card.className = "end-card";
   card.id = "end-card";
-  card.hidden = true;
+  card.hidden = false;
 
   const difficultyLabel = document.createElement("p");
   difficultyLabel.className = "difficulty-label";
@@ -697,6 +697,7 @@ async function load() {
     setupPlayer();
     updateDetailsButton();
     updateNavButtons();
+    showEndCard();
 
     const storedFocus = Number(podcast.focusIndex);
     const savedFocus = clamp(Number.isInteger(storedFocus) ? storedFocus : 0, 0, Math.max(units.length - 1, 0));
@@ -712,9 +713,6 @@ async function load() {
       setFocused(savedFocus);
       updateFocus();
       focusRestoring = false;
-      if (duration > 0 && (Number(podcast.progress) || 0) >= duration - 0.5) {
-        showEndCard();
-      }
     });
   } catch (error) {
     console.error(error);
