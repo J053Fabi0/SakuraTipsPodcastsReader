@@ -26,7 +26,7 @@
   --accent-gradient-start: #e77a9a;
   --player-height: 214px;
   --radius: 18px;
-  --shadow: 0 18px 45px rgba(98, 48, 70, 0.10);
+  --shadow: 0 18px 45px rgba(98, 48, 70, 0.1);
   color-scheme: light dark;
 }
 
@@ -74,11 +74,16 @@ body {
 body {
   background:
     radial-gradient(circle at 12% 0%, var(--bg-glow-1) 0, transparent 34rem),
-    radial-gradient(circle at 90% 8%, var(--bg-glow-2) 0, transparent 30rem),
-    var(--bg);
+    radial-gradient(circle at 90% 8%, var(--bg-glow-2) 0, transparent 30rem), var(--bg);
   color: var(--ink);
-  font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", "Segoe UI",
-    system-ui, -apple-system, sans-serif;
+  font-family:
+    "Hiragino Sans",
+    "Yu Gothic",
+    "Noto Sans JP",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -184,6 +189,7 @@ input {
   border-radius: 999px;
   background: var(--glass-medium);
   font-size: 0.72rem;
+  color: var(--ink);
 }
 
 .tab:not(.is-active) .tab-count {
@@ -241,7 +247,9 @@ input {
   border-radius: var(--radius);
   box-shadow: 0 10px 30px rgba(98, 48, 70, 0.045);
   text-decoration: none;
-  transition: transform 160ms ease, box-shadow 160ms ease,
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
     border-color 160ms ease;
 }
 
@@ -408,7 +416,9 @@ input {
   border-radius: 14px;
   cursor: pointer;
   outline: none;
-  transition: background-color 180ms ease, transform 180ms ease;
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
 }
 
 .unit:hover {
@@ -424,7 +434,9 @@ input {
   font-weight: 500;
   line-height: 1.95;
   letter-spacing: 0.015em;
-  transition: font-size 180ms ease, font-weight 180ms ease,
+  transition:
+    font-size 180ms ease,
+    font-weight 180ms ease,
     color 180ms ease;
 }
 
@@ -436,7 +448,10 @@ input {
   filter: blur(6px);
   opacity: 0.68;
   user-select: none;
-  transition: filter 220ms ease, opacity 220ms ease, color 220ms ease;
+  transition:
+    filter 220ms ease,
+    opacity 220ms ease,
+    color 220ms ease;
 }
 
 .unit.focused {
@@ -526,7 +541,9 @@ rt {
   font-size: 2rem;
   line-height: 1;
   cursor: pointer;
-  transition: color 150ms ease, transform 150ms ease;
+  transition:
+    color 150ms ease,
+    transform 150ms ease;
 }
 
 .star:hover,
@@ -559,7 +576,9 @@ rt {
   font-weight: 800;
   line-height: 1.35;
   text-decoration: none;
-  transition: filter 150ms ease, transform 150ms ease;
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
 }
 
 .next-podcast:hover,
@@ -612,7 +631,9 @@ rt {
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease,
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
     opacity 150ms ease;
 }
 
@@ -713,7 +734,9 @@ rt {
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 800;
-  transition: border-color 150ms ease, background-color 150ms ease,
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
     transform 150ms ease;
 }
 
