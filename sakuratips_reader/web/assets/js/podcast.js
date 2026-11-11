@@ -106,7 +106,18 @@ function toggleUnit(index) {
   setRevealed(index, !revealed.has(index));
 }
 
+function hasTextSelection() {
+  const selection = window.getSelection();
+  return Boolean(
+    selection && !selection.isCollapsed && selection.toString().trim(),
+  );
+}
+
 function activateUnit(index) {
+  // Seleccionar texto no debe activar/desactivar la unidad.
+  if (hasTextSelection()) {
+    return;
+  }
   if (index !== focusedIndex) {
     units[index].scrollIntoView({
       behavior: reducedMotion ? "auto" : "smooth",
@@ -139,7 +150,24 @@ function renderLyrics() {
     english.textContent = podcast.english[index] || "";
 
     unit.append(japanese, english);
-    unit.addEventListener("click", () => activateUnit(index));
+    let pointerStart = null;
+    unit.addEventListener("pointerdown", (event) => {
+      pointerStart = { x: event.clientX, y: event.clientY };
+    });
+    unit.addEventListener("click", (event) => {
+      if (pointerStart) {
+        const distance = Math.hypot(
+          event.clientX - pointerStart.x,
+          event.clientY - pointerStart.y,
+        );
+        pointerStart = null;
+        // Un arrastre para seleccionar texto no debe contar como clic.
+        if (distance > 5) {
+          return;
+        }
+      }
+      activateUnit(index);
+    });
     unit.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();

@@ -385,6 +385,9 @@ rt {
   font-size: 0.52em;
   font-weight: 600;
   letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .unit.revealed rt {

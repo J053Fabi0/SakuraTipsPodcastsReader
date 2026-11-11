@@ -374,6 +374,8 @@ nunca mantiene una copia obsoleta.
 - Clic en una unidad no enfocada: la desplaza suavemente al centro, sin
   revelar nada.
 - Clic en la unidad enfocada: alterna Furigana + traducción.
+- Seleccionar texto no activa ni desactiva la unidad; el Furigana no es
+  seleccionable y no interfiere con el arrastre de selección.
 - El foco se actualiza al hacer scroll manual; no hay sincronización
   automática con el audio.
 - El subtítulo enfocado se guarda en `focusIndex` y se restaura al volver a
