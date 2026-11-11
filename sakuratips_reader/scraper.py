@@ -7,6 +7,7 @@ regulares al HTML completo; solo se normaliza el texto de cada fragmento.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -14,6 +15,16 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 
 JAPANESE_HEADING = "にほんご"
 ENGLISH_HEADING = "English"
+
+SITE_SUFFIX_PATTERN = re.compile(
+    r"\s*(?:[｜|]\s*SAKURA\s*TIPS|-\s*SAKURA\s*TIPS)\s*$",
+    re.IGNORECASE,
+)
+CHAPTER_NUMBER_PATTERNS = (
+    re.compile(r"^\s*(\d+)\s*[.．]"),
+    re.compile(r"[｜|]\s*(\d+)\s*[.．]"),
+    re.compile(r"#\s*(\d+)"),
+)
 
 SAKURATIPS_HOSTS = {"sakuratips.com", "www.sakuratips.com"}
 URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
@@ -49,6 +60,16 @@ class MissingEnglishError(ScraperError):
     """La pagina no contiene la seccion de subtitulos en ingles."""
 
 
+@dataclass(frozen=True)
+class TranscriptPage:
+    """Titulo, numero de capitulo y subtitulos de una pagina."""
+
+    title: str | None
+    chapter_number: int | None
+    japanese: list[str]
+    english: list[str]
+
+
 def normalize_text(text: str) -> str:
     """Normaliza whitespace ASCII/NBSP preservando el espacio ideografico U+3000."""
 
@@ -64,6 +85,39 @@ def extract_episode_number(title: str | None) -> int | None:
     if match is None:
         return None
     return int(match.group(1))
+
+
+def extract_chapter_number(title: str | None) -> int | None:
+    """Extrae el numero de capitulo del titulo de SakuraTips."""
+
+    if not title:
+        return None
+    for pattern in CHAPTER_NUMBER_PATTERNS:
+        match = pattern.search(title)
+        if match is not None:
+            return int(match.group(1))
+    return None
+
+
+def extract_page_title(soup: BeautifulSoup) -> str | None:
+    """Obtiene el titulo desde el H1 del articulo de SakuraTips."""
+
+    title_tag = (
+        soup.select_one("h1.cps-post-title")
+        or soup.select_one('h1[itemprop="headline"]')
+        or soup.find("h1")
+    )
+    title = title_tag.get_text(" ", strip=True) if title_tag else ""
+
+    if not title:
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            title = str(og_title["content"])
+    if not title and soup.title is not None:
+        title = soup.title.get_text(" ", strip=True)
+
+    title = normalize_text(SITE_SUFFIX_PATTERN.sub("", title))
+    return title or None
 
 
 def description_says_no_transcript(description: str) -> bool:
@@ -265,12 +319,7 @@ def _collect_section(
     return lines
 
 
-def parse_subtitles(html: str | bytes) -> tuple[list[str], list[str]]:
-    """Extrae y valida las lineas japonesas e inglesas de un HTML."""
-
-    soup = BeautifulSoup(html, "html.parser")
-    article = _find_article(soup)
-
+def _parse_article(article: Tag) -> tuple[list[str], list[str]]:
     japanese_headings = _headings(article, JAPANESE_HEADING)
     english_headings = _headings(article, ENGLISH_HEADING)
 
@@ -301,6 +350,28 @@ def parse_subtitles(html: str | bytes) -> tuple[list[str], list[str]]:
     return japanese, english
 
 
+def parse_transcript(html: str | bytes) -> TranscriptPage:
+    """Extrae titulo, numero de capitulo y subtitulos validados."""
+
+    soup = BeautifulSoup(html, "html.parser")
+    title = extract_page_title(soup)
+    article = _find_article(soup)
+    japanese, english = _parse_article(article)
+    return TranscriptPage(
+        title=title,
+        chapter_number=extract_chapter_number(title),
+        japanese=japanese,
+        english=english,
+    )
+
+
+def parse_subtitles(html: str | bytes) -> tuple[list[str], list[str]]:
+    """Extrae y valida las lineas japonesas e inglesas de un HTML."""
+
+    page = parse_transcript(html)
+    return page.japanese, page.english
+
+
 def _ensure_html_content_type(response: requests.Response) -> None:
     content_type = response.headers.get("Content-Type", "")
     if content_type and "html" not in content_type.lower():
@@ -310,14 +381,12 @@ def _ensure_html_content_type(response: requests.Response) -> None:
         )
 
 
-def fetch_subtitles(
+def _fetch_html(
     url: str,
     *,
     session: requests.Session | None = None,
     timeout: float = DEFAULT_TIMEOUT,
-) -> tuple[list[str], list[str]]:
-    """Descarga la pagina y devuelve los subtitulos validados."""
-
+) -> bytes | str:
     http = session or requests.Session()
     headers = {"User-Agent": USER_AGENT, "Accept-Language": "ja,en;q=0.8"}
     try:
@@ -332,7 +401,46 @@ def fetch_subtitles(
     raw_html = getattr(response, "content", None)
     if raw_html is None:
         raw_html = response.text
-    return parse_subtitles(raw_html)
+    return raw_html
+
+
+def fetch_transcript(
+    url: str,
+    *,
+    session: requests.Session | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> TranscriptPage:
+    """Descarga una pagina de SakuraTips y devuelve titulo y subtitulos."""
+
+    return parse_transcript(
+        _fetch_html(url, session=session, timeout=timeout)
+    )
+
+
+def fetch_subtitles(
+    url: str,
+    *,
+    session: requests.Session | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> tuple[list[str], list[str]]:
+    """Descarga la pagina y devuelve los subtitulos validados."""
+
+    page = fetch_transcript(url, session=session, timeout=timeout)
+    return page.japanese, page.english
+
+
+def fetch_title_metadata(
+    url: str,
+    *,
+    session: requests.Session | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> tuple[str | None, int | None]:
+    """Obtiene solo titulo y numero de capitulo (para migraciones)."""
+
+    raw_html = _fetch_html(url, session=session, timeout=timeout)
+    soup = BeautifulSoup(raw_html, "html.parser")
+    title = extract_page_title(soup)
+    return title, extract_chapter_number(title)
 
 
 def lines_from_html_fragment(html: str) -> tuple[list[str], list[str]]:

@@ -13,6 +13,11 @@ const countElements = {
   pending: document.querySelector('[data-count="pending"]'),
   watched: document.querySelector('[data-count="watched"]'),
 };
+const sortSelect = document.getElementById("sort-select");
+const sortDirection = document.getElementById("sort-direction");
+
+let sortKey = "chapter";
+let sortAscending = true;
 
 function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
@@ -41,6 +46,93 @@ function progressPercent(podcast) {
 function formatPercent(value) {
   const rounded = Math.round(value * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
+function chapterValue(podcast) {
+  if (podcast.chapterNumber !== null && podcast.chapterNumber !== undefined) {
+    const stored = Number(podcast.chapterNumber);
+    if (Number.isInteger(stored) && stored >= 0) {
+      return stored;
+    }
+  }
+  const title = String(podcast.title || "");
+  const match = title.match(
+    /^\s*(\d+)\s*[.．]|[｜|]\s*(\d+)\s*[.．]|#\s*(\d+)/,
+  );
+  if (!match) {
+    return null;
+  }
+  return Number(match[1] || match[2] || match[3]);
+}
+
+function difficultyValue(podcast) {
+  const value = Number(podcast.difficulty);
+  return Number.isInteger(value) && value >= 0 && value <= 5 ? value : 0;
+}
+
+function comparePodcasts(left, right) {
+  const direction = sortAscending ? 1 : -1;
+  if (sortKey === "difficulty") {
+    const a = difficultyValue(left);
+    const b = difficultyValue(right);
+    if (a === 0 && b === 0) {
+      return (
+        (chapterValue(left) ?? Infinity) -
+          (chapterValue(right) ?? Infinity) ||
+        String(left.title).localeCompare(String(right.title))
+      );
+    }
+    if (a === 0) {
+      return 1;
+    }
+    if (b === 0) {
+      return -1;
+    }
+    if (a !== b) {
+      return (a - b) * direction;
+    }
+    return (
+      (chapterValue(left) ?? Infinity) -
+        (chapterValue(right) ?? Infinity) ||
+      String(left.title).localeCompare(String(right.title))
+    );
+  }
+  const a = chapterValue(left);
+  const b = chapterValue(right);
+  if (a === null && b === null) {
+    return String(left.title).localeCompare(String(right.title)) * direction;
+  }
+  if (a === null) {
+    return 1;
+  }
+  if (b === null) {
+    return -1;
+  }
+  return (
+    (a - b) * direction ||
+    String(left.title).localeCompare(String(right.title)) * direction
+  );
+}
+
+function sortedPodcasts(podcasts) {
+  return [...podcasts].sort(comparePodcasts);
+}
+
+function difficultyLabel(podcast) {
+  const value = difficultyValue(podcast);
+  return value > 0
+    ? `Dificultad: ${"★".repeat(value)}${"☆".repeat(5 - value)}`
+    : "Dificultad: sin calificar";
+}
+
+function updateSortButton() {
+  sortDirection.textContent = sortAscending ? "↑ Ascendente" : "↓ Descendente";
+  sortDirection.setAttribute(
+    "aria-label",
+    sortAscending
+      ? "Cambiar a orden descendente"
+      : "Cambiar a orden ascendente",
+  );
 }
 
 function createCard(podcast) {
@@ -72,7 +164,7 @@ function createCard(podcast) {
   const meta = document.createElement("p");
   meta.className = "card-meta";
   const lines = Array.isArray(podcast.japanese) ? podcast.japanese.length : 0;
-  meta.textContent = `${formatDuration(podcast.duration)} · ${lines} líneas`;
+  meta.textContent = `${formatDuration(podcast.duration)} · ${lines} líneas · ${difficultyLabel(podcast)}`;
 
   link.append(top, track, meta);
   return link;
@@ -96,8 +188,12 @@ function renderList(container, podcasts, emptyMessage) {
 
 function render(data) {
   const podcasts = Array.isArray(data.podcasts) ? data.podcasts : [];
-  const pending = podcasts.filter((podcast) => progressPercent(podcast) < WATCHED_THRESHOLD);
-  const watched = podcasts.filter((podcast) => progressPercent(podcast) >= WATCHED_THRESHOLD);
+  const pending = sortedPodcasts(
+    podcasts.filter((podcast) => progressPercent(podcast) < WATCHED_THRESHOLD),
+  );
+  const watched = sortedPodcasts(
+    podcasts.filter((podcast) => progressPercent(podcast) >= WATCHED_THRESHOLD),
+  );
 
   countElements.pending.textContent = String(pending.length);
   countElements.watched.textContent = String(watched.length);
@@ -152,4 +248,16 @@ for (const tab of tabs) {
   tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 }
 
+sortSelect.addEventListener("change", () => {
+  sortKey = sortSelect.value;
+  load();
+});
+
+sortDirection.addEventListener("click", () => {
+  sortAscending = !sortAscending;
+  updateSortButton();
+  load();
+});
+
+updateSortButton();
 load();

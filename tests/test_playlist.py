@@ -8,7 +8,11 @@ from sakuratips_reader import cli, playlist_state
 from sakuratips_reader.audio import AudioError, PlaylistEntry
 from sakuratips_reader.database import DatabaseStore
 from sakuratips_reader.playlist_state import PlaylistStateStore
-from sakuratips_reader.scraper import MissingEnglishError, SubtitleMismatchError
+from sakuratips_reader.scraper import (
+    MissingEnglishError,
+    SubtitleMismatchError,
+    TranscriptPage,
+)
 
 from conftest import make_podcast
 
@@ -80,12 +84,17 @@ def metadata_for(youtube_id: str) -> dict:
     }
 
 
-def fake_subtitles(url: str):
+def fake_transcript(url: str) -> TranscriptPage:
     if url == MISMATCH_URL:
         raise SubtitleMismatchError(28, 30)
     if url == NO_ENGLISH_URL:
         raise MissingEnglishError("No se encontro el encabezado English.")
-    return ["日本語の行"], ["English line"]
+    return TranscriptPage(
+        title="Titulo de SakuraTips",
+        chapter_number=1,
+        japanese=["日本語の行"],
+        english=["English line"],
+    )
 
 
 def prepare(monkeypatch, tmp_path: Path):
@@ -105,7 +114,7 @@ def prepare(monkeypatch, tmp_path: Path):
         "search_sakuratips_transcript",
         lambda number, session=None: SEARCH_URL if number == 638 else None,
     )
-    monkeypatch.setattr(cli.scraper, "fetch_subtitles", fake_subtitles)
+    monkeypatch.setattr(cli.scraper, "fetch_transcript", fake_transcript)
     sleeps: list[float] = []
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: sleeps.append(seconds))
     return dist, sleeps
@@ -114,13 +123,14 @@ def prepare(monkeypatch, tmp_path: Path):
 def install_fake_add(monkeypatch, dist: Path, *, failing_id: str | None = None):
     calls: list[dict] = []
 
-    def fake_add(first, second, *, metadata=None, subtitles=None):
+    def fake_add(first, second, *, metadata=None, subtitles=None, transcript_title=None):
         calls.append(
             {
                 "first": first,
                 "second": second,
                 "metadata": metadata,
                 "subtitles": subtitles,
+                "transcript_title": transcript_title,
             }
         )
         if metadata and metadata["id"] == failing_id:
@@ -200,7 +210,7 @@ def test_second_run_skips_all_processed_without_per_video_requests(
     )
     monkeypatch.setattr(
         cli.scraper,
-        "fetch_subtitles",
+        "fetch_transcript",
         lambda url: pytest.fail("no debe pedir subtitulos"),
     )
     monkeypatch.setattr(
@@ -273,7 +283,7 @@ def test_dry_run_does_not_persist_state(monkeypatch, tmp_path, capsys):
     dist, _sleeps = prepare(monkeypatch, tmp_path)
     monkeypatch.setattr(
         cli.scraper,
-        "fetch_subtitles",
+        "fetch_transcript",
         lambda url: pytest.fail("dry-run no debe validar subtitulos"),
     )
     monkeypatch.setattr(

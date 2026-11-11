@@ -290,10 +290,13 @@ def test_build_podcast_record():
         english=["Chiba"],
         furigana=[[{"text": "千葉", "reading": "ちば"}]],
         added_at="2026-11-10T09:00:00-06:00",
+        chapter_number=92,
     )
     assert record["audioFile"] == "audio/dQw4w9WgXcQ.mp3"
     assert record["progress"] == 0.0
     assert record["focusIndex"] == 0
+    assert record["chapterNumber"] == 92
+    assert record["difficulty"] == 0
     assert record["duration"] == 10.0
 
     with pytest.raises(ValueError):

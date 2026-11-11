@@ -144,6 +144,72 @@ def test_focus_index_validation(dist_dir: Path):
         store.append(make_podcast("ddddddddddd", focusIndex=True))
 
 
+def test_update_title_and_chapter_only_target(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", title="Viejo", chapterNumber=1))
+    store.append(make_podcast("bbbbbbbbbbb", title="Otro", chapterNumber=2))
+
+    updated = store.update_title_and_chapter(
+        "bbbbbbbbbbb", "93. 神社 Shrine", 93
+    )
+
+    assert updated["title"] == "93. 神社 Shrine"
+    assert updated["chapterNumber"] == 93
+    data = store.load()
+    assert data["podcasts"][0]["title"] == "Viejo"
+    assert data["podcasts"][0]["chapterNumber"] == 1
+    assert data["podcasts"][1]["progress"] == 0.0
+
+
+def test_update_title_rejects_invalid_values(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa"))
+    with pytest.raises(ValueError):
+        store.update_title_and_chapter("aaaaaaaaaaa", "", 1)
+    with pytest.raises(ValueError):
+        store.update_title_and_chapter("aaaaaaaaaaa", "Titulo", -1)
+
+
+def test_update_difficulty(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", difficulty=0))
+    store.append(make_podcast("bbbbbbbbbbb", difficulty=2))
+
+    updated = store.update_difficulty("aaaaaaaaaaa", 5)
+
+    assert updated["difficulty"] == 5
+    data = store.load()
+    assert data["podcasts"][0]["difficulty"] == 5
+    assert data["podcasts"][1]["difficulty"] == 2
+
+
+@pytest.mark.parametrize("value", [-1, 6, 1.5, True, "3", None])
+def test_update_difficulty_rejects_invalid_values(dist_dir: Path, value):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", difficulty=0))
+    with pytest.raises(ValueError):
+        store.update_difficulty("aaaaaaaaaaa", value)
+    assert store.load()["podcasts"][0]["difficulty"] == 0
+
+
+def test_chapter_and_difficulty_validation(dist_dir: Path):
+    store = DatabaseStore(dist_dir)
+    store.append(make_podcast("aaaaaaaaaaa", chapterNumber=93, difficulty=3))
+    assert store.load()["podcasts"][0]["chapterNumber"] == 93
+
+    missing = make_podcast("bbbbbbbbbbb")
+    missing.pop("chapterNumber")
+    missing.pop("difficulty")
+    store.append(missing)
+
+    with pytest.raises(DatabaseError):
+        store.append(make_podcast("ccccccccccc", chapterNumber=-1))
+    with pytest.raises(DatabaseError):
+        store.append(make_podcast("ddddddddddd", difficulty=6))
+    with pytest.raises(DatabaseError):
+        store.append(make_podcast("eeeeeeeeeee", difficulty=True))
+
+
 def test_update_unknown_id_raises_keyerror(dist_dir: Path):
     store = DatabaseStore(dist_dir)
     store.append(make_podcast("aaaaaaaaaaa"))

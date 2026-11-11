@@ -10,11 +10,16 @@ from sakuratips_reader.scraper import (
     ScraperError,
     SubtitleMismatchError,
     description_says_no_transcript,
+    extract_chapter_number,
     extract_episode_number,
+    extract_page_title,
     extract_transcript_url_from_description,
     fetch_subtitles,
+    fetch_title_metadata,
+    fetch_transcript,
     normalize_text,
     parse_subtitles,
+    parse_transcript,
     search_sakuratips_transcript,
 )
 
@@ -79,6 +84,99 @@ def test_jin_sen_before_paragraph_is_ignored():
     japanese, english = parse_subtitles(html)
     assert japanese == ["本文"]
     assert english == ["Body"]
+
+
+TITLED_HTML = """
+<html>
+<head>
+  <title>54.こたつ Kotatsu｜SAKURA TIPS</title>
+  <meta property="og:title" content="54.こたつ Kotatsu｜SAKURA TIPS">
+</head>
+<body>
+  <h1 class="cps-post-title entry-title" itemprop="headline">
+    54.こたつ Kotatsu
+  </h1>
+  <div itemprop="articleBody">
+    <h2>にほんご</h2>
+    <p>こんにちは</p>
+    <h2>English</h2>
+    <p>Hello</p>
+  </div>
+</body>
+</html>
+"""
+
+
+def _soup(html: str):
+    from bs4 import BeautifulSoup
+
+    return BeautifulSoup(html, "html.parser")
+
+
+def test_extract_page_title_and_chapter_number():
+    title = extract_page_title(_soup(TITLED_HTML))
+    assert title == "54.こたつ Kotatsu"
+    assert extract_chapter_number(title) == 54
+
+
+def test_extract_chapter_number_formats():
+    assert extract_chapter_number("93. 神社 Shrine") == 93
+    assert (
+        extract_chapter_number(
+            "Japanese Listening｜638. 宮崎県 Miyazaki Prefecture"
+        )
+        == 638
+    )
+    assert extract_chapter_number("Improve Japanese #92") == 92
+    assert extract_chapter_number("Sin numero") is None
+
+
+def test_extract_page_title_strips_site_suffix():
+    html = TITLED_HTML.replace(
+        "54.こたつ Kotatsu\n  </h1>",
+        "54.こたつ Kotatsu｜SAKURA TIPS\n  </h1>",
+    )
+    assert extract_page_title(_soup(html)) == "54.こたつ Kotatsu"
+
+
+def test_extract_page_title_falls_back_to_og_title():
+    html = """
+    <html><head>
+      <meta property="og:title" content="12. テスト Test｜SAKURA TIPS">
+    </head><body></body></html>
+    """
+    assert extract_page_title(_soup(html)) == "12. テスト Test"
+
+
+def test_parse_transcript_returns_title_and_lines():
+    page = parse_transcript(TITLED_HTML)
+    assert page.title == "54.こたつ Kotatsu"
+    assert page.chapter_number == 54
+    assert page.japanese == ["こんにちは"]
+    assert page.english == ["Hello"]
+
+
+def test_fetch_transcript_uses_one_request():
+    session = FakeSession(FakeResponse(TITLED_HTML))
+    page = fetch_transcript("https://sakuratips.com/x/", session=session)
+    assert page.title == "54.こたつ Kotatsu"
+    assert len(session.calls) == 1
+
+
+def test_fetch_title_metadata_does_not_validate_subtitles():
+    html = """
+    <html><body>
+      <h1 class="cps-post-title">93. 神社 Shrine</h1>
+      <div itemprop="articleBody"><h2>にほんご</h2><p>本文</p></div>
+    </body></html>
+    """
+    session = FakeSession(FakeResponse(html))
+    title, chapter = fetch_title_metadata(
+        "https://sakuratips.com/x/", session=session
+    )
+    assert title == "93. 神社 Shrine"
+    assert chapter == 93
+    assert len(session.calls) == 1
 
 
 def test_page_53_mismatch_reports_both_counts():

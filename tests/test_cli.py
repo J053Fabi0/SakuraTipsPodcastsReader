@@ -6,7 +6,7 @@ import pytest
 
 from sakuratips_reader import cli
 from sakuratips_reader.database import DatabaseStore
-from sakuratips_reader.scraper import SubtitleMismatchError
+from sakuratips_reader.scraper import SubtitleMismatchError, TranscriptPage
 
 from conftest import make_podcast
 
@@ -15,6 +15,15 @@ YOUTUBE_ID = "aaaaaaaaaaa"
 SAKURA_URL = "https://sakuratips.com/2020/12/20/54/"
 JAPANESE = ["化粧についてです。", "みなさん、こんにちは。"]
 ENGLISH = ["About makeup.", "Hello, everyone."]
+
+
+def transcript_page(title: str = "54.こたつ Kotatsu") -> TranscriptPage:
+    return TranscriptPage(
+        title=title,
+        chapter_number=54,
+        japanese=list(JAPANESE),
+        english=list(ENGLISH),
+    )
 
 
 def test_no_arguments_starts_server(monkeypatch, tmp_path):
@@ -51,7 +60,7 @@ def test_duplicate_is_rejected_without_network(monkeypatch, tmp_path, capsys):
     def fail(*args, **kwargs):
         raise AssertionError("no se debe consultar la red para un duplicado")
 
-    monkeypatch.setattr(cli.scraper, "fetch_subtitles", fail)
+    monkeypatch.setattr(cli.scraper, "fetch_transcript", fail)
     monkeypatch.setattr(cli.audio, "fetch_metadata", fail)
 
     assert cli.main([YOUTUBE_URL, SAKURA_URL]) == 1
@@ -69,7 +78,7 @@ def test_mismatch_does_not_download_or_write(monkeypatch, tmp_path, capsys):
     def fail(*args, **kwargs):
         raise AssertionError("no se debe descargar audio si falla la validacion")
 
-    monkeypatch.setattr(cli.scraper, "fetch_subtitles", mismatch)
+    monkeypatch.setattr(cli.scraper, "fetch_transcript", mismatch)
     monkeypatch.setattr(cli.audio, "fetch_metadata", fail)
     monkeypatch.setattr(cli.audio, "download_audio", fail)
 
@@ -92,15 +101,15 @@ def test_successful_add_and_preserve_existing(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(
         cli.scraper,
-        "fetch_subtitles",
-        lambda url: (list(JAPANESE), list(ENGLISH)),
+        "fetch_transcript",
+        lambda url: transcript_page(),
     )
     monkeypatch.setattr(
         cli.audio,
         "fetch_metadata",
         lambda url: {
             "id": YOUTUBE_ID,
-            "title": "54.こたつ Kotatsu",
+            "title": "Titulo del video",
             "duration": 42.5,
         },
     )
@@ -123,6 +132,8 @@ def test_successful_add_and_preserve_existing(monkeypatch, tmp_path, capsys):
     ]
     record = data["podcasts"][1]
     assert record["title"] == "54.こたつ Kotatsu"
+    assert record["chapterNumber"] == 54
+    assert record["difficulty"] == 0
     assert record["duration"] == 42.5
     assert record["progress"] == 0.0
     assert record["audioFile"] == f"audio/{YOUTUBE_ID}.mp3"
@@ -142,9 +153,9 @@ def test_url_order_does_not_matter(monkeypatch, tmp_path, capsys):
 
     def fake_fetch(url):
         requested_sakuratips_urls.append(url)
-        return list(JAPANESE), list(ENGLISH)
+        return transcript_page()
 
-    monkeypatch.setattr(cli.scraper, "fetch_subtitles", fake_fetch)
+    monkeypatch.setattr(cli.scraper, "fetch_transcript", fake_fetch)
     monkeypatch.setattr(
         cli.audio,
         "fetch_metadata",
@@ -188,8 +199,8 @@ def test_metadata_id_mismatch_is_rejected(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
     monkeypatch.setattr(
         cli.scraper,
-        "fetch_subtitles",
-        lambda url: (list(JAPANESE), list(ENGLISH)),
+        "fetch_transcript",
+        lambda url: transcript_page(),
     )
     monkeypatch.setattr(
         cli.audio,
@@ -212,8 +223,8 @@ def test_download_failure_leaves_no_database(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
     monkeypatch.setattr(
         cli.scraper,
-        "fetch_subtitles",
-        lambda url: (list(JAPANESE), list(ENGLISH)),
+        "fetch_transcript",
+        lambda url: transcript_page(),
     )
     monkeypatch.setattr(
         cli.audio,
@@ -233,3 +244,81 @@ def test_download_failure_leaves_no_database(monkeypatch, tmp_path, capsys):
     assert not (dist / "database.json").exists()
     assert not (dist / "audio" / f"{YOUTUBE_ID}.mp3").exists()
     assert not any((dist / "audio").glob(".tmp-*"))
+
+
+def test_migrate_titles_updates_current_data(monkeypatch, tmp_path, capsys):
+    dist = tmp_path / "dist"
+    monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
+    store = DatabaseStore(dist)
+    store.append(
+        make_podcast("aaaaaaaaaaa", title="Video viejo", chapterNumber=None)
+    )
+    store.append(
+        make_podcast(
+            "bbbbbbbbbbb",
+            title="Otro video",
+            chapterNumber=None,
+            sakuratipsUrl="https://sakuratips.com/2024/02/04/638/",
+        )
+    )
+
+    titles = {
+        "https://sakuratips.com/2020/12/20/54/": ("93. 神社 Shrine", 93),
+    }
+    monkeypatch.setattr(
+        cli.scraper,
+        "fetch_title_metadata",
+        lambda url, session=None: titles.get(url, ("638. 宮崎県", 638)),
+    )
+
+    assert cli.main(["--migrate-titles"]) == 0
+    data = store.load()
+    assert data["podcasts"][0]["title"] == "93. 神社 Shrine"
+    assert data["podcasts"][0]["chapterNumber"] == 93
+    assert data["podcasts"][1]["title"] == "638. 宮崎県"
+    assert data["podcasts"][1]["chapterNumber"] == 638
+    assert "Actualizados: 2" in capsys.readouterr().out
+
+
+def test_migrate_titles_dry_run_does_not_write(monkeypatch, tmp_path, capsys):
+    dist = tmp_path / "dist"
+    monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
+    store = DatabaseStore(dist)
+    store.append(make_podcast("aaaaaaaaaaa", title="Video viejo"))
+
+    monkeypatch.setattr(
+        cli.scraper,
+        "fetch_title_metadata",
+        lambda url, session=None: ("93. 神社 Shrine", 93),
+    )
+
+    assert cli.main(["--migrate-titles", "--dry-run"]) == 0
+    assert store.load()["podcasts"][0]["title"] == "Video viejo"
+    assert "dry-run" in capsys.readouterr().out
+
+
+def test_migrate_titles_continues_after_errors(monkeypatch, tmp_path, capsys):
+    dist = tmp_path / "dist"
+    monkeypatch.setenv("SAKURATIPS_DIST", str(dist))
+    store = DatabaseStore(dist)
+    store.append(make_podcast("aaaaaaaaaaa", title="Viejo 1"))
+    store.append(
+        make_podcast(
+            "bbbbbbbbbbb",
+            title="Viejo 2",
+            sakuratipsUrl="https://sakuratips.com/2024/02/04/638/",
+        )
+    )
+
+    def fetch(url, session=None):
+        if url.endswith("/54/"):
+            raise cli.scraper.ScraperError("fallo simulado")
+        return "638. 宮崎県", 638
+
+    monkeypatch.setattr(cli.scraper, "fetch_title_metadata", fetch)
+
+    assert cli.main(["--migrate-titles"]) == 1
+    data = store.load()
+    assert data["podcasts"][0]["title"] == "Viejo 1"
+    assert data["podcasts"][1]["title"] == "638. 宮崎県"
+    assert "Errores: 1" in capsys.readouterr().out

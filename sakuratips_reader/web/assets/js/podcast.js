@@ -16,17 +16,23 @@ const elements = {
   currentTime: document.getElementById("current-time"),
   totalTime: document.getElementById("total-time"),
   playPause: document.getElementById("play-pause"),
-  back1: document.getElementById("back-1"),
+  back5: document.getElementById("back-5"),
   back3: document.getElementById("back-3"),
-  forward1: document.getElementById("forward-1"),
   forward3: document.getElementById("forward-3"),
+  forward5: document.getElementById("forward-5"),
+  prevSentence: document.getElementById("prev-sentence"),
+  nextSentence: document.getElementById("next-sentence"),
+  toggleDetails: document.getElementById("toggle-details"),
   saveStatus: document.getElementById("save-status"),
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let podcast = null;
+let allPodcasts = [];
 let units = [];
+let endCard = null;
+let endCardShown = false;
 let revealed = new Set();
 let focusedIndex = -1;
 let focusRestoring = true;
@@ -55,6 +61,203 @@ function formatTime(seconds) {
 function formatPercent(value) {
   const rounded = Math.round(value * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
+function chapterValue(entry) {
+  if (entry?.chapterNumber !== null && entry?.chapterNumber !== undefined) {
+    const stored = Number(entry.chapterNumber);
+    if (Number.isInteger(stored) && stored >= 0) {
+      return stored;
+    }
+  }
+  const title = String(entry?.title || "");
+  const match = title.match(
+    /^\s*(\d+)\s*[.．]|[｜|]\s*(\d+)\s*[.．]|#\s*(\d+)/,
+  );
+  if (!match) {
+    return null;
+  }
+  return Number(match[1] || match[2] || match[3]);
+}
+
+function sortByChapter(entries) {
+  return [...entries].sort((left, right) => {
+    const a = chapterValue(left);
+    const b = chapterValue(right);
+    if (a === null && b === null) {
+      return String(left.title).localeCompare(String(right.title));
+    }
+    if (a === null) {
+      return 1;
+    }
+    if (b === null) {
+      return -1;
+    }
+    return a - b || String(left.title).localeCompare(String(right.title));
+  });
+}
+
+function nextPodcast() {
+  if (!podcast) {
+    return null;
+  }
+  const sorted = sortByChapter(allPodcasts);
+  const index = sorted.findIndex(
+    (entry) => entry.youtubeId === podcast.youtubeId,
+  );
+  return index >= 0 ? sorted[index + 1] || null : null;
+}
+
+function updateDetailsButton() {
+  const unit = units[focusedIndex];
+  const isRevealed = Boolean(
+    unit && unit.classList.contains("revealed"),
+  );
+  elements.toggleDetails.disabled = !unit;
+  elements.toggleDetails.textContent = isRevealed
+    ? "Ocultar detalles"
+    : "Mostrar detalles";
+  elements.toggleDetails.setAttribute(
+    "aria-pressed",
+    String(isRevealed),
+  );
+}
+
+function updateNavButtons() {
+  elements.prevSentence.disabled = focusedIndex <= 0;
+  elements.nextSentence.disabled =
+    focusedIndex < 0 || focusedIndex >= units.length - 1;
+}
+
+async function saveDifficulty(value) {
+  if (!podcast) {
+    return;
+  }
+  try {
+    const response = await fetch(
+      `/api/difficulty/${encodeURIComponent(podcast.youtubeId)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ difficulty: value }),
+        keepalive: true,
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+  } catch (error) {
+    console.warn("No se pudo guardar la dificultad", error);
+    setSaveStatus("No se pudo guardar la dificultad");
+  }
+}
+
+function setDifficulty(value) {
+  const difficulty = clamp(Number(value) || 0, 0, 5);
+  if (podcast) {
+    podcast.difficulty = difficulty;
+  }
+  if (!endCard) {
+    return;
+  }
+  for (const star of endCard.querySelectorAll(".star")) {
+    const starValue = Number(star.dataset.value);
+    const active = starValue <= difficulty;
+    star.classList.toggle("is-active", active);
+    star.setAttribute("aria-pressed", String(starValue === difficulty));
+  }
+  const status = endCard.querySelector(".difficulty-status");
+  if (status) {
+    status.textContent =
+      difficulty > 0
+        ? `Dificultad: ${"★".repeat(difficulty)}${"☆".repeat(5 - difficulty)}`
+        : "Dificultad: sin calificar";
+  }
+}
+
+function buildEndCard() {
+  const card = document.createElement("section");
+  card.className = "end-card";
+  card.id = "end-card";
+  card.hidden = true;
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "end-eyebrow";
+  eyebrow.textContent = "Fin del podcast";
+
+  const difficultyLabel = document.createElement("p");
+  difficultyLabel.className = "difficulty-label";
+  difficultyLabel.textContent = "¿Qué tan difícil te pareció?";
+
+  const stars = document.createElement("div");
+  stars.className = "difficulty-stars";
+  stars.setAttribute("role", "group");
+  stars.setAttribute("aria-label", "Dificultad del podcast");
+  for (let value = 1; value <= 5; value += 1) {
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "star";
+    star.dataset.value = String(value);
+    star.textContent = "★";
+    star.setAttribute("aria-label", `${value} de 5 estrellas`);
+    star.setAttribute("aria-pressed", "false");
+    star.addEventListener("click", () => {
+      const current = Number(podcast?.difficulty) || 0;
+      const nextValue = current === value ? 0 : value;
+      setDifficulty(nextValue);
+      saveDifficulty(nextValue);
+    });
+    stars.appendChild(star);
+  }
+
+  const status = document.createElement("p");
+  status.className = "difficulty-status";
+
+  const next = nextPodcast();
+  const nextLink = document.createElement("a");
+  nextLink.className = "next-podcast";
+  if (next) {
+    nextLink.href = `podcast.html?id=${encodeURIComponent(next.youtubeId)}`;
+    nextLink.textContent = `Siguiente: ${next.title} →`;
+  } else {
+    nextLink.href = "index.html";
+    nextLink.textContent = "Volver a la biblioteca →";
+  }
+
+  card.append(eyebrow, difficultyLabel, stars, status, nextLink);
+  elements.lyrics.appendChild(card);
+  endCard = card;
+  setDifficulty(Number(podcast?.difficulty) || 0);
+}
+
+function showEndCard() {
+  if (!endCard || endCardShown) {
+    return;
+  }
+  endCardShown = true;
+  endCard.hidden = false;
+  if (focusedIndex >= units.length - 1) {
+    endCard.scrollIntoView({
+      block: "nearest",
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+  }
+}
+
+function focusSentence(delta) {
+  if (units.length === 0) {
+    return;
+  }
+  const current = focusedIndex < 0 ? 0 : focusedIndex;
+  const target = clamp(current + delta, 0, units.length - 1);
+  if (target === focusedIndex) {
+    return;
+  }
+  setFocused(target);
+  units[target].scrollIntoView({
+    behavior: reducedMotion ? "auto" : "smooth",
+    block: "center",
+  });
 }
 
 function setSaveStatus(message) {
@@ -100,6 +303,7 @@ function setRevealed(index, shouldReveal) {
   }
   unit.classList.toggle("revealed", shouldReveal);
   unit.setAttribute("aria-pressed", String(shouldReveal));
+  updateDetailsButton();
 }
 
 function toggleUnit(index) {
@@ -194,6 +398,8 @@ function setFocused(index) {
   if (index >= 0 && units[index]) {
     units[index].classList.add("focused");
   }
+  updateDetailsButton();
+  updateNavButtons();
   if (!focusRestoring) {
     scheduleFocusSave();
   }
@@ -423,6 +629,7 @@ function setupPlayer() {
     updatePlayButton();
     updateTimeUI();
     saveProgress({ force: true, value: duration });
+    showEndCard();
   });
   elements.audio.addEventListener("error", () => {
     setSaveStatus("No se pudo cargar el archivo de audio.");
@@ -439,10 +646,18 @@ function setupPlayer() {
     }
   });
 
-  elements.back1.addEventListener("click", () => seekBy(-1));
+  elements.back5.addEventListener("click", () => seekBy(-5));
   elements.back3.addEventListener("click", () => seekBy(-3));
-  elements.forward1.addEventListener("click", () => seekBy(1));
   elements.forward3.addEventListener("click", () => seekBy(3));
+  elements.forward5.addEventListener("click", () => seekBy(5));
+
+  elements.prevSentence.addEventListener("click", () => focusSentence(-1));
+  elements.nextSentence.addEventListener("click", () => focusSentence(1));
+  elements.toggleDetails.addEventListener("click", () => {
+    if (focusedIndex >= 0) {
+      toggleUnit(focusedIndex);
+    }
+  });
 
   elements.seek.addEventListener("input", () => {
     if (restoring) {
@@ -506,7 +721,8 @@ async function load() {
     if (data.schemaVersion !== SCHEMA_VERSION) {
       throw new Error(`schemaVersion no soportada: ${data.schemaVersion}`);
     }
-    podcast = data.podcasts.find((entry) => entry.youtubeId === youtubeId);
+    allPodcasts = Array.isArray(data.podcasts) ? data.podcasts : [];
+    podcast = allPodcasts.find((entry) => entry.youtubeId === youtubeId);
     if (!podcast) {
       showFatalError("No se encontró el podcast solicitado.");
       return;
@@ -515,7 +731,10 @@ async function load() {
     duration = Number(podcast.duration) || 0;
     renderHeader();
     renderLyrics();
+    buildEndCard();
     setupPlayer();
+    updateDetailsButton();
+    updateNavButtons();
 
     const storedFocus = Number(podcast.focusIndex);
     const savedFocus = clamp(
@@ -535,6 +754,9 @@ async function load() {
       setFocused(savedFocus);
       updateFocus();
       focusRestoring = false;
+      if (duration > 0 && (Number(podcast.progress) || 0) >= duration - 0.5) {
+        showEndCard();
+      }
     });
   } catch (error) {
     console.error(error);

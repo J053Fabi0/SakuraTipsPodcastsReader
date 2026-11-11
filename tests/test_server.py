@@ -309,6 +309,54 @@ def test_serve_does_not_schedule_browser_when_disabled(monkeypatch, tmp_path):
     assert events == ["serve_forever"]
 
 
+def test_put_difficulty_updates_only_one(client, app_and_dist):
+    _app, dist = app_and_dist
+    response = client.put(
+        "/api/difficulty/bbbbbbbbbbb", json={"difficulty": 4}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["difficulty"] == 4
+
+    data = DatabaseStore(dist).load()
+    assert data["podcasts"][0]["difficulty"] == 0
+    assert data["podcasts"][1]["difficulty"] == 4
+    assert data["podcasts"][1]["progress"] == 20.0
+
+
+def test_post_difficulty_alias(client, app_and_dist):
+    _app, dist = app_and_dist
+    response = client.post(
+        "/api/difficulty/aaaaaaaaaaa", json={"difficulty": 3}
+    )
+    assert response.status_code == 200
+    assert DatabaseStore(dist).load()["podcasts"][0]["difficulty"] == 3
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"difficulty": -1},
+        {"difficulty": 6},
+        {"difficulty": 1.5},
+        {"difficulty": True},
+        {"difficulty": "4"},
+        {"difficulty": None},
+    ],
+)
+def test_invalid_difficulty_is_rejected(client, payload):
+    response = client.put("/api/difficulty/aaaaaaaaaaa", json=payload)
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+
+
+def test_unknown_difficulty_podcast_returns_404(client):
+    response = client.put(
+        "/api/difficulty/zzzzzzzzzzz", json={"difficulty": 3}
+    )
+    assert response.status_code == 404
+
+
 def test_corrupt_database_returns_500(tmp_path):
     dist = tmp_path / "dist"
     dist.mkdir()

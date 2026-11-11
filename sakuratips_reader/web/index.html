@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
   <title>SakuraTips Podcasts Reader</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/style.css">
@@ -30,6 +30,16 @@
               aria-selected="false" aria-controls="panel-watched" data-tab="watched">
         Vistos <span class="tab-count" data-count="watched">0</span>
       </button>
+    </div>
+
+    <div class="sort-bar" aria-label="Ordenar podcasts">
+      <label for="sort-select">Ordenar por</label>
+      <select id="sort-select" class="sort-select">
+        <option value="chapter">Capítulo</option>
+        <option value="difficulty">Dificultad</option>
+      </select>
+      <button id="sort-direction" class="sort-direction" type="button"
+              aria-label="Cambiar dirección de ordenación">↑ Ascendente</button>
     </div>
 
     <section class="panel" id="panel-pending" role="tabpanel" aria-labelledby="tab-pending">

@@ -25,6 +25,7 @@ USAGE = """Uso:
   sakuratips-reader <youtube_url> <sakuratips_url>
   sakuratips-reader
   sakuratips-reader --playlist <playlist_url> [opciones]
+  sakuratips-reader --migrate-titles [--dry-run]
 
 Con dos argumentos agrega un podcast al sitio en dist/.
 El orden de las dos URLs no importa: se identifican por su dominio.
@@ -62,6 +63,7 @@ def add_podcast(
     *,
     metadata: dict | None = None,
     subtitles: tuple[list[str], list[str]] | None = None,
+    transcript_title: str | None = None,
 ) -> int:
     dist_dir = get_dist_dir()
     store = DatabaseStore(dist_dir)
@@ -85,6 +87,7 @@ def add_podcast(
         _print_error(f"El podcast {youtube_id} ya fue agregado.")
         return 1
 
+    page_title = transcript_title
     if subtitles is not None:
         japanese, english = subtitles
         if len(japanese) != len(english):
@@ -95,7 +98,9 @@ def add_podcast(
             return 1
     else:
         try:
-            japanese, english = scraper.fetch_subtitles(sakuratips_url)
+            page = scraper.fetch_transcript(sakuratips_url)
+            japanese, english = page.japanese, page.english
+            page_title = page.title
         except SubtitleMismatchError as exc:
             _print_error(str(exc))
             return 1
@@ -131,16 +136,18 @@ def add_podcast(
         )
         return 1
 
+    podcast_title = page_title or metadata["title"]
     record = audio.build_podcast_record(
         youtube_id=youtube_id,
         youtube_url=youtube_url.strip(),
         sakuratips_url=sakuratips_url,
-        title=metadata["title"],
+        title=podcast_title,
         duration=metadata["duration"],
         japanese=japanese,
         english=english,
         furigana=furigana_data,
         added_at=datetime.now(timezone.utc).astimezone().isoformat(),
+        chapter_number=scraper.extract_chapter_number(podcast_title),
     )
 
     try:
@@ -449,8 +456,11 @@ def import_playlist(
                 pause()
                 continue
 
+            site_title = title
             try:
-                japanese, english = scraper.fetch_subtitles(transcript_url)
+                page = scraper.fetch_transcript(transcript_url)
+                japanese, english = page.japanese, page.english
+                site_title = page.title or title
             except SubtitleMismatchError as exc:
                 save_status(
                     youtube_id,
@@ -516,6 +526,7 @@ def import_playlist(
                 transcript_url,
                 metadata=metadata,
                 subtitles=(japanese, english),
+                transcript_title=site_title,
             )
             if status == 0:
                 save_status(
@@ -606,6 +617,79 @@ def import_playlist(
     return 1 if stats["errors"] else 0
 
 
+def migrate_titles(*, dry_run: bool = False) -> int:
+    """Actualiza titulo y chapterNumber desde la pagina de SakuraTips."""
+
+    dist_dir = get_dist_dir()
+    store = DatabaseStore(dist_dir)
+    try:
+        data = store.load()
+    except DatabaseError as exc:
+        _print_error(str(exc))
+        return 1
+
+    podcasts = data["podcasts"]
+    if not podcasts:
+        print("No hay podcasts para migrar.")
+        return 0
+
+    http_session = requests.Session()
+    updated = 0
+    unchanged = 0
+    errors = 0
+    try:
+        for index, podcast in enumerate(podcasts, start=1):
+            youtube_id = podcast["youtubeId"]
+            title = podcast.get("title", "")
+            print(f"[{index}/{len(podcasts)}] {youtube_id} ...", end=" ")
+            try:
+                new_title, chapter = scraper.fetch_title_metadata(
+                    podcast["sakuratipsUrl"], session=http_session
+                )
+            except ScraperError as exc:
+                errors += 1
+                print(f"error: {exc}")
+                continue
+            except Exception as exc:  # pragma: no cover - red inesperada
+                errors += 1
+                print(f"error inesperado: {exc}")
+                continue
+
+            if not new_title:
+                errors += 1
+                print("error: la pagina no tiene titulo")
+                continue
+
+            if (
+                new_title == title
+                and podcast.get("chapterNumber") == chapter
+            ):
+                unchanged += 1
+                print(f"sin cambios: {new_title}")
+                continue
+
+            print(f"{title!r} -> {new_title!r} (capitulo {chapter})")
+            if not dry_run:
+                try:
+                    store.update_title_and_chapter(
+                        youtube_id, new_title, chapter
+                    )
+                except (KeyError, ValueError, DatabaseError, OSError) as exc:
+                    errors += 1
+                    print(f"  no se pudo guardar: {exc}")
+                    continue
+            updated += 1
+    finally:
+        http_session.close()
+
+    print()
+    print("Resumen de migracion de titulos:")
+    print(f"  Actualizados: {updated}" + (" (dry-run)" if dry_run else ""))
+    print(f"  Sin cambios: {unchanged}")
+    print(f"  Errores: {errors}")
+    return 1 if errors else 0
+
+
 def _parse_playlist_arguments(arguments: list[str]) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(
         prog="sakuratips-reader",
@@ -649,6 +733,13 @@ def main(argv: list[str] | None = None) -> int:
     if arguments in (["-h"], ["--help"]):
         print(USAGE)
         return 0
+
+    if arguments and arguments[0] == "--migrate-titles":
+        allowed = {"--migrate-titles", "--dry-run"}
+        if any(argument not in allowed for argument in arguments):
+            print(USAGE, file=sys.stderr)
+            return 2
+        return migrate_titles(dry_run="--dry-run" in arguments)
 
     if "--playlist" in arguments:
         options = _parse_playlist_arguments(arguments)

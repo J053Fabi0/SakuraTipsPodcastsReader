@@ -382,6 +382,7 @@ def build_podcast_record(
     english: list[str],
     furigana: list[list[dict[str, Any]]],
     added_at: str,
+    chapter_number: int | None = None,
 ) -> dict[str, Any]:
     if len(japanese) != len(english):
         raise ValueError(
@@ -402,5 +403,7 @@ def build_podcast_record(
         "furigana": furigana,
         "progress": 0.0,
         "focusIndex": 0,
+        "chapterNumber": chapter_number,
+        "difficulty": 0,
         "addedAt": added_at,
     }

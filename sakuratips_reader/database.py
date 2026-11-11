@@ -139,6 +139,24 @@ def validate_podcast(podcast: Any, index: int | None = None) -> None:
             + "focusIndex debe ser un entero entre 0 y la cantidad de lineas",
         )
 
+    chapter_number = podcast.get("chapterNumber")
+    if chapter_number is not None:
+        _require(
+            isinstance(chapter_number, int)
+            and not isinstance(chapter_number, bool)
+            and chapter_number >= 0,
+            prefix + "chapterNumber debe ser un entero no negativo",
+        )
+
+    difficulty = podcast.get("difficulty")
+    if difficulty is not None:
+        _require(
+            isinstance(difficulty, int)
+            and not isinstance(difficulty, bool)
+            and 0 <= difficulty <= 5,
+            prefix + "difficulty debe ser un entero entre 0 y 5",
+        )
+
 
 def validate_database(data: Any) -> dict[str, Any]:
     _require(isinstance(data, dict), "database.json debe ser un objeto")
@@ -383,5 +401,65 @@ class DatabaseStore:
                 )
 
             entry["focusIndex"] = focus_index
+            self._write_unlocked(data)
+            return dict(entry)
+
+    def update_title_and_chapter(
+        self,
+        youtube_id: str,
+        title: str,
+        chapter_number: int | None,
+    ) -> dict[str, Any]:
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("El titulo no puede estar vacio")
+        if chapter_number is not None and (
+            not isinstance(chapter_number, int)
+            or isinstance(chapter_number, bool)
+            or chapter_number < 0
+        ):
+            raise ValueError("chapterNumber debe ser un entero no negativo")
+
+        with self._locked():
+            data = self._read_unlocked()
+            entry = next(
+                (
+                    podcast
+                    for podcast in data["podcasts"]
+                    if podcast.get("youtubeId") == youtube_id
+                ),
+                None,
+            )
+            if entry is None:
+                raise KeyError(youtube_id)
+
+            entry["title"] = title.strip()
+            entry["chapterNumber"] = chapter_number
+            self._write_unlocked(data)
+            return dict(entry)
+
+    def update_difficulty(
+        self, youtube_id: str, difficulty: Any
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(difficulty, int)
+            or isinstance(difficulty, bool)
+            or not 0 <= difficulty <= 5
+        ):
+            raise ValueError("difficulty debe ser un entero entre 0 y 5")
+
+        with self._locked():
+            data = self._read_unlocked()
+            entry = next(
+                (
+                    podcast
+                    for podcast in data["podcasts"]
+                    if podcast.get("youtubeId") == youtube_id
+                ),
+                None,
+            )
+            if entry is None:
+                raise KeyError(youtube_id)
+
+            entry["difficulty"] = difficulty
             self._write_unlocked(data)
             return dict(entry)
