@@ -71,9 +71,7 @@ function chapterValue(entry) {
     }
   }
   const title = String(entry?.title || "");
-  const match = title.match(
-    /^\s*(\d+)\s*[.．]|[｜|]\s*(\d+)\s*[.．]|#\s*(\d+)/,
-  );
+  const match = title.match(/^\s*(\d+)\s*[.．]|[｜|]\s*(\d+)\s*[.．]|#\s*(\d+)/);
   if (!match) {
     return null;
   }
@@ -102,31 +100,21 @@ function nextPodcast() {
     return null;
   }
   const sorted = sortByChapter(allPodcasts);
-  const index = sorted.findIndex(
-    (entry) => entry.youtubeId === podcast.youtubeId,
-  );
+  const index = sorted.findIndex((entry) => entry.youtubeId === podcast.youtubeId);
   return index >= 0 ? sorted[index + 1] || null : null;
 }
 
 function updateDetailsButton() {
   const unit = units[focusedIndex];
-  const isRevealed = Boolean(
-    unit && unit.classList.contains("revealed"),
-  );
+  const isRevealed = Boolean(unit && unit.classList.contains("revealed"));
   elements.toggleDetails.disabled = !unit;
-  elements.toggleDetails.textContent = isRevealed
-    ? "Ocultar detalles"
-    : "Mostrar detalles";
-  elements.toggleDetails.setAttribute(
-    "aria-pressed",
-    String(isRevealed),
-  );
+  elements.toggleDetails.textContent = isRevealed ? "Ocultar detalles" : "Mostrar detalles";
+  elements.toggleDetails.setAttribute("aria-pressed", String(isRevealed));
 }
 
 function updateNavButtons() {
   elements.prevSentence.disabled = focusedIndex <= 0;
-  elements.nextSentence.disabled =
-    focusedIndex < 0 || focusedIndex >= units.length - 1;
+  elements.nextSentence.disabled = focusedIndex < 0 || focusedIndex >= units.length - 1;
 }
 
 async function saveDifficulty(value) {
@@ -134,15 +122,12 @@ async function saveDifficulty(value) {
     return;
   }
   try {
-    const response = await fetch(
-      `/api/difficulty/${encodeURIComponent(podcast.youtubeId)}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ difficulty: value }),
-        keepalive: true,
-      },
-    );
+    const response = await fetch(`/api/difficulty/${encodeURIComponent(podcast.youtubeId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ difficulty: value }),
+      keepalive: true,
+    });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -166,13 +151,13 @@ function setDifficulty(value) {
     star.classList.toggle("is-active", active);
     star.setAttribute("aria-pressed", String(starValue === difficulty));
   }
-  const status = endCard.querySelector(".difficulty-status");
-  if (status) {
-    status.textContent =
-      difficulty > 0
-        ? `Dificultad: ${"★".repeat(difficulty)}${"☆".repeat(5 - difficulty)}`
-        : "Dificultad: sin calificar";
-  }
+  // const status = endCard.querySelector(".difficulty-status");
+  // if (status) {
+  //   status.textContent =
+  //     difficulty > 0
+  //       ? `Dificultad: ${"★".repeat(difficulty)}${"☆".repeat(5 - difficulty)}`
+  //       : "Dificultad: sin calificar";
+  // }
 }
 
 function buildEndCard() {
@@ -210,8 +195,8 @@ function buildEndCard() {
     stars.appendChild(star);
   }
 
-  const status = document.createElement("p");
-  status.className = "difficulty-status";
+  // const status = document.createElement("p");
+  // status.className = "difficulty-status";
 
   const next = nextPodcast();
   const nextLink = document.createElement("a");
@@ -224,7 +209,7 @@ function buildEndCard() {
     nextLink.textContent = "Volver a la biblioteca →";
   }
 
-  card.append(eyebrow, difficultyLabel, stars, status, nextLink);
+  card.append(eyebrow, difficultyLabel, stars, nextLink);
   elements.lyrics.appendChild(card);
   endCard = card;
   setDifficulty(Number(podcast?.difficulty) || 0);
@@ -312,9 +297,7 @@ function toggleUnit(index) {
 
 function hasTextSelection() {
   const selection = window.getSelection();
-  return Boolean(
-    selection && !selection.isCollapsed && selection.toString().trim(),
-  );
+  return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
 }
 
 function activateUnit(index) {
@@ -360,10 +343,7 @@ function renderLyrics() {
     });
     unit.addEventListener("click", (event) => {
       if (pointerStart) {
-        const distance = Math.hypot(
-          event.clientX - pointerStart.x,
-          event.clientY - pointerStart.y,
-        );
+        const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
         pointerStart = null;
         // Un arrastre para seleccionar texto no debe contar como clic.
         if (distance > 5) {
@@ -506,19 +486,11 @@ async function saveProgress({ force = false, beacon = false, value = null } = {}
   if (!podcast || restoring || !Number.isFinite(duration) || duration <= 0) {
     return;
   }
-  const progressValue = clamp(
-    value === null ? currentProgress() : Number(value),
-    0,
-    duration,
-  );
+  const progressValue = clamp(value === null ? currentProgress() : Number(value), 0, duration);
   if (!Number.isFinite(progressValue)) {
     return;
   }
-  if (
-    !force &&
-    lastSavedProgress !== null &&
-    Math.abs(progressValue - lastSavedProgress) < 0.4
-  ) {
+  if (!force && lastSavedProgress !== null && Math.abs(progressValue - lastSavedProgress) < 0.4) {
     return;
   }
 
@@ -579,10 +551,7 @@ function seekBy(delta) {
 function updatePlayButton() {
   const playing = !elements.audio.paused && !elements.audio.ended;
   elements.playPause.textContent = playing ? "❚❚" : "▶";
-  elements.playPause.setAttribute(
-    "aria-label",
-    playing ? "Pausar" : "Reproducir",
-  );
+  elements.playPause.setAttribute("aria-label", playing ? "Pausar" : "Reproducir");
 }
 
 function setupPlayer() {
@@ -594,9 +563,8 @@ function setupPlayer() {
 
   elements.audio.addEventListener("loadedmetadata", () => {
     const realDuration = Number(elements.audio.duration);
-    const maximum = Number.isFinite(realDuration) && realDuration > 0
-      ? Math.min(duration, realDuration)
-      : duration;
+    const maximum =
+      Number.isFinite(realDuration) && realDuration > 0 ? Math.min(duration, realDuration) : duration;
     const stored = clamp(Number(podcast.progress) || 0, 0, maximum);
     if (stored > 0) {
       try {
@@ -691,9 +659,7 @@ function renderHeader() {
   document.title = `${podcast.title} · SakuraTips Reader`;
   elements.title.textContent = podcast.title;
   const lines = podcast.japanese.length;
-  const percent = duration > 0
-    ? clamp((Number(podcast.progress) / duration) * 100, 0, 100)
-    : 0;
+  const percent = duration > 0 ? clamp((Number(podcast.progress) / duration) * 100, 0, 100) : 0;
   elements.meta.textContent = `${formatTime(duration)} · ${lines} líneas · ${formatPercent(percent)}`;
   elements.youtubeLink.href = podcast.youtubeUrl;
   elements.sakuratipsLink.href = podcast.sakuratipsUrl;
@@ -737,11 +703,7 @@ async function load() {
     updateNavButtons();
 
     const storedFocus = Number(podcast.focusIndex);
-    const savedFocus = clamp(
-      Number.isInteger(storedFocus) ? storedFocus : 0,
-      0,
-      Math.max(units.length - 1, 0),
-    );
+    const savedFocus = clamp(Number.isInteger(storedFocus) ? storedFocus : 0, 0, Math.max(units.length - 1, 0));
     window.requestAnimationFrame(() => {
       if (savedFocus > 0 && units[savedFocus]) {
         units[savedFocus].scrollIntoView({
@@ -760,9 +722,7 @@ async function load() {
     });
   } catch (error) {
     console.error(error);
-    showFatalError(
-      "No se pudo cargar database.json. Inicia el servidor local e inténtalo de nuevo.",
-    );
+    showFatalError("No se pudo cargar database.json. Inicia el servidor local e inténtalo de nuevo.");
   }
 }
 
