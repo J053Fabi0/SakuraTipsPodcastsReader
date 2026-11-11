@@ -166,10 +166,6 @@ function buildEndCard() {
   card.id = "end-card";
   card.hidden = true;
 
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "end-eyebrow";
-  eyebrow.textContent = "Fin del podcast";
-
   const difficultyLabel = document.createElement("p");
   difficultyLabel.className = "difficulty-label";
   difficultyLabel.textContent = "¿Qué tan difícil te pareció?";
@@ -209,7 +205,7 @@ function buildEndCard() {
     nextLink.textContent = "Volver a la biblioteca →";
   }
 
-  card.append(eyebrow, difficultyLabel, stars, nextLink);
+  card.append(difficultyLabel, stars, nextLink);
   elements.lyrics.appendChild(card);
   endCard = card;
   setDifficulty(Number(podcast?.difficulty) || 0);
