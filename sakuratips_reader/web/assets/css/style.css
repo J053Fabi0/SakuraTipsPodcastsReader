@@ -545,7 +545,6 @@ rt {
     transform 150ms ease;
 }
 
-.star:hover,
 .star:focus-visible {
   color: var(--accent);
   transform: translateY(-1px);
@@ -738,7 +737,7 @@ rt {
     transform 150ms ease;
 }
 
-.control:hover {
+.control:hover:not(.play-pause) {
   border-color: var(--border-hover);
   background: var(--control-hover);
 }
@@ -764,10 +763,6 @@ rt {
   font-size: 1.25rem;
   box-shadow: 0 8px 18px rgba(217, 79, 122, 0.28);
   line-height: 0;
-}
-
-.play-pause:hover {
-  filter: brightness(0.92);
 }
 
 .save-status {
