@@ -462,7 +462,7 @@ input {
 .unit.focused .ja {
   font-size: 1.72rem;
   font-weight: 800;
-  color: #241827;
+  color: var(--ink);
 }
 
 .unit.focused .en {
